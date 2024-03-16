@@ -1,0 +1,42 @@
+---
+title: "DATA698: Research Project: Data Analysis"
+author: "Glen Dale Davis"
+date: "2024-03-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Packages
+
+```{r cars}
+library(tidyverse)
+
+```
+
+## Introduction
+
+```{r }
+base <- "https://raw.githubusercontent.com/geedoubledee/data698_research_project/main/data/allrecipes_df_pt_"
+exts <- c("1.csv", "2.csv", "3.csv")
+for (i in 1:length(exts)){
+    url <- paste0(base, exts[i])
+    df <- read.csv(url)
+    if (i == 1){
+        allrecipes_df <- df
+    }else{
+        allrecipes_df <- allrecipes_df |>
+            bind_rows(df)
+    }
+}
+remove <- 
+
+```
+
+## Exploratory Data Analysis
+
+## Data Preparation
+
+
