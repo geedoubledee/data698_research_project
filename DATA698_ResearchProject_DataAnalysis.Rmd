@@ -11,32 +11,553 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Packages
 
-```{r cars}
+```{r packages, warning = FALSE, message = FALSE}
+library(caret)
+library(elasticnet)
+library(e1071)
+library(factoextra)
+library(knitr)
+library(Matrix)
+library(naivebayes)
+library(packrat)
+library(RColorBrewer)
+library(snakecase)
+library(sparcl)
+library(stats)
+library(stopwords)
+library(tidytext)
 library(tidyverse)
+library(topicmodels)
+library(UpSetR)
 
 ```
 
 ## Introduction
 
-```{r }
+```{r data}
 base <- "https://raw.githubusercontent.com/geedoubledee/data698_research_project/main/data/allrecipes_df_pt_"
-exts <- c("1.csv", "2.csv", "3.csv")
+exts <- c("1.csv", "2.csv", "3.csv", "4.csv", "5.csv")
 for (i in 1:length(exts)){
     url <- paste0(base, exts[i])
     df <- read.csv(url)
     if (i == 1){
-        allrecipes_df <- df
+        ar_df <- df
     }else{
-        allrecipes_df <- allrecipes_df |>
+        ar_df <- ar_df |>
             bind_rows(df)
     }
 }
-remove <- 
+url <- "https://raw.githubusercontent.com/geedoubledee/data698_research_project/main/data/links_df.csv"
+links_df <- read.csv(url)
 
 ```
 
 ## Exploratory Data Analysis
 
-## Data Preparation
+During the data collection process, bad links were given a `Visited` value of -1 to separate them from good links we had already visited (value: 1) and links we had not yet visited (value: 0). Some of these bad links were added to the recipes data erroneously, so we identify and remove them. 
+
+```{r bad_links}
+ar_df <- ar_df |>
+    left_join(links_df, by = join_by(URL)) |>
+    filter(Visited != -1) |>
+    select(-Visited)
+rm(links_df)
+
+```
+
+A small number of recipes that have never been reviewed also made their way into the data, so we remove those as well. 
+
+```{r no_reviews}
+ar_df <- ar_df |>
+    filter(!is.na(Reviews_Total))
+
+```
+
+## Initial Data Preparation for Unsupervised Learning
+
+While some positive reviews may identify problems with a recipe, it is reasonable to assume that negative reviews are more likely to do so. So we first create a corpus of potentially negative review text. This will make manually labeling reviews by what problem they are identifying faster later by hopefully limiting the number of reviews we will have to look at that don't identify any problems at all. We define a potentially negative review as any text review combined with a star rating of 3 or less.
+
+We pivot our wide review data into a longer format, dropping some columns we don't need for this stage of the analysis. 
+
+```{r pivot_long}
+keep <- c("URL", "Recipe_Name", "Ratings_Total", "Ratings_Avg", "Reviews_Total")
+user_sub <- ar_df |>
+    select(c(all_of(keep), starts_with("User_"))) |>
+    pivot_longer(cols = starts_with("User_"), names_to = "Review_Num",
+                 values_to = "User", names_prefix = "User_")
+rating_sub <- ar_df |>
+    select(c("URL", starts_with("Rating_"))) |>
+    pivot_longer(cols = starts_with("Rating_"), names_to = "Review_Num",
+                 values_to = "Rating", names_prefix = "Rating_")
+date_sub <- ar_df |>
+    select(c("URL", starts_with("Date_"))) |>
+    pivot_longer(cols = starts_with("Date_"), names_to = "Review_Num",
+                 values_to = "Date", names_prefix = "Date_")
+txt_sub <- ar_df |>
+    select(-starts_with("Review_Len")) |>
+    select(c("URL", starts_with("Review_"))) |>
+    pivot_longer(cols = starts_with("Review_"), names_to = "Review_Num",
+                 values_to = "Review_Txt", names_prefix = "Review_")
+txt_len_sub <- ar_df |>
+    select(c("URL", starts_with("Review_Len"))) |>
+    pivot_longer(cols = starts_with("Review_Len"), names_to = "Review_Num",
+                 values_to = "Review_Len", names_prefix = "Review_Len")
+helpful_sub <- ar_df |>
+    select(c("URL", starts_with("Helpful_"))) |>
+    pivot_longer(cols = starts_with("Helpful_"), names_to = "Review_Num",
+                 values_to = "Helpful", names_prefix = "Helpful_")
+ar_df_long <- user_sub |>
+    left_join(rating_sub, by = join_by(URL, Review_Num)) |>
+    left_join(date_sub, by = join_by(URL, Review_Num)) |>
+    left_join(txt_sub, by = join_by(URL, Review_Num)) |>
+    left_join(txt_len_sub, by = join_by(URL, Review_Num)) |>
+    left_join(helpful_sub, by = join_by(URL, Review_Num)) |>
+    filter(!is.na(Rating))
+print(nrow(ar_df_long))
+
+```
+
+This leaves us with 134,800 text reviews. We remove any reviews with star ratings of 4 or higher.
+
+```{r }
+ar_df_long_neg <- ar_df_long |>
+    filter(Rating < 4)
+nrows <- nrow(ar_df_long_neg)
+print(nrows)
+
+```
+
+That leaves us with 14,954 potentially negative reviews.
+
+## Unsupervised Learning: Topic Modeling
+
+We start by fuzzy clustering the reviews into topics using bigrams. Since some words that are commonly considered stopwords for text data might be useful for our analysis, we will not exclude bigrams that contain words like "too" and "not" from consideration. Many reviews will definitely include text like "too much" or "not enough," and we hope fuzzy clustering will group reviews together based on their similar language. We also eliminate bigrams containing numbers.
+
+```{r warning = FALSE, message = FALSE}
+stop_w <- as.data.frame(stopwords(language = "en", source = "nltk"))
+colnames(stop_w) <- c("WORD")
+excl <- c("do", "does", "did", "doing", "during", "before", "after", "up",
+          "down", "over", "under", "when", "why", "how", "all", "any", "both",
+          "each", "few", "more", "most", "no", "nor", "not", "only", "than",
+          "too", "very", "can", "will", "don't", "should", "should've",
+          "aren't", "couldn't", "didn't", "doesn't", "hadn't", "hasn't",
+          "haven't", "isn't", "mightn't", "mustn't", "needn't", "shan't",
+          "shouldn't", "wasn't", "weren't", "won't", "wouldn't")
+stop_w <- stop_w |>
+    mutate(SRC = "NLTK") |>
+    filter(!WORD %in% excl)
+keep <- c("URL", "Review_Num", "Review_Txt")
+names <- c("w1", "w2")
+ar_df_long_neg_bigrams <- ar_df_long_neg |>
+    select(all_of(keep)) |>
+    unnest_tokens(output = BIGRAM, input = Review_Txt,
+                  token = "ngrams", n = 2) |>
+    count(URL, Review_Num, BIGRAM, name = "COUNT") |>
+    ungroup() |>
+    separate_wider_delim(BIGRAM, delim = " ", names = names,
+                         cols_remove = FALSE) |>
+    mutate(w1 = ifelse(w1 %in% stop_w$WORD, NA, w1),
+           w1 = ifelse(!is.na(as.numeric(w1)), NA, w1),
+           w2 = ifelse(w2 %in% stop_w$WORD, NA, w2),
+           w2 = ifelse(!is.na(as.numeric(w2)), NA, w2)) |>
+    filter(!is.na(w1) & !is.na(w2)) |>
+    select(-all_of(names)) |>
+    mutate(BIGRAM = to_snake_case(BIGRAM))
+ar_df_long_neg_bigrams_dtm <- ar_df_long_neg_bigrams |>
+    unite("ID", URL, Review_Num, sep = "_Review_Num_") |>
+    cast_dtm(ID, BIGRAM, COUNT)
+
+```
+
+Using values of k from two to 12, we measure the perplexity of several different Latent Dirichlet Allocation (LDA) models that would automatically divide the data into k topics. 
+
+```{r }
+get_perplexity <- function(dtm, k_max){
+    #function adapted from https://bit.ly/4cLUHO8
+    m <- matrix(,1,1)
+    for (i in 2:k_max){
+        lda <- LDA(dtm, i)
+        per <- perplexity(lda)
+        m <- plyr::rbind.fill.matrix(m, per)
+    }
+    m <- as.data.frame(cbind(matrix(seq(2, k_max), ncol = 1), m[-1,]))
+    colnames(m) <- c("topics", "perplexity")
+    return(m)
+}
+fn <- "data/perplexity_values.csv"
+if (!file.exists(fn)){
+    per_vals <- get_perplexity(ar_df_long_neg_bigrams_dtm, k_max = 12)
+    write.csv(per_vals, fn, row.names = FALSE, fileEncoding = "UTF-8")
+}else{
+    per_vals <- read.csv(fn)
+}
+cur_theme <- theme_set(theme_classic())
+pal <- brewer.pal(12, "Paired")
+p0 <- per_vals |>
+    ggplot(aes(x = topics, y = perplexity)) +
+    geom_line(color = pal[9]) +
+    geom_point(color = pal[10]) +
+    scale_x_continuous(breaks = seq(2, 12, 1), limits = c(2, 12)) +
+    scale_y_continuous(breaks = seq(0, 25000, 5000), limits = c(0, 25000))
+p0
+
+```
+
+The reduction in perplexity begins to drop off after about six topics, so we set k to six in the final LDA model.
+
+```{r }
+fn <- "ar_lda.rds"
+if (!file.exists(fn)){
+    ar_lda <- LDA(ar_df_long_neg_bigrams_dtm, k = 6, control = list(seed = 208))
+    saveRDS(ar_lda, "ar_lda.rds")
+}else{
+    ar_lda <- readRDS("ar_lda.rds")
+}
+ar_topics <- tidy(ar_lda, matrix = "beta")
+top_terms <- ar_topics |>
+    group_by(topic) |>
+    slice_max(beta, n = 15) |>
+    ungroup() |>
+    arrange(topic, -beta) |>
+    mutate(term = reorder_within(term, beta, topic))
+p1 <- top_terms |>
+    ggplot(aes(beta, term)) +
+    geom_col(color = pal[10], fill = pal[9]) +
+    facet_wrap(~ topic, scales = "free_y", nrow = 2) +
+    scale_y_reordered()
+p1
 
 
+```
+
+We see a lot of overlap in the bigrams that are common to these six topics. In topics one, two, and six, "next time" is the most identifying bigram, indicating the reviews in each of these topics are likely to exhibit some disappointment in the results and some suggestions for improving those results in the future. Despite all the overlap, there are also bigrams that are unique to each topic. 
+
+It's notable that some of these unique bigrams are related to specific ingredients, i.e. brown sugar being an identifier of topic one, cream cheese being an identifier of topic four, and soy sauce being an identifier of topic six. Ingredients have therefore resulted in some unintended grouping. We check for an additional instance of unintended grouping since the reviews are of various lengths, and it is reasonable to suspect review length might have incidentally factored into the topic decision boundaries. 
+
+```{r }
+ar_gamma <- tidy(ar_lda, matrix = "gamma")
+names <- c("URL", "Review_Num")
+ar_classifications <- ar_gamma |>
+    separate_wider_delim(document, delim = "_Review_Num_", names = names) |>
+    group_by(URL, Review_Num) |>
+    slice_max(gamma) |>
+    ungroup() |>
+    mutate(topic = as.factor(topic))
+incl <- c("URL", "Review_Num", "Review_Len")
+rev_len_by_top <- ar_classifications |>
+    left_join(ar_df_long_neg |> select(all_of(incl)),
+              by = join_by(URL, Review_Num))
+annotations <- rev_len_by_top |>
+    group_by(topic) |>
+    summarize(`1st Qu.:` = round(quantile(Review_Len, probs = 0.25), 0),
+              `Med.:` = median(Review_Len),
+              `3rd Qu.:` = round(quantile(Review_Len, probs = 0.75), 0)) |>
+    pivot_longer(cols = !topic, names_to = "Variable",
+                 values_to = "Value")
+p2 <- rev_len_by_top |>
+    ggplot(aes(x = Review_Len)) + 
+    geom_histogram(binwidth = 100, color = pal[10], fill = pal[9]) +
+    geom_segment(aes(x = Value, xend = Value, y = 0, yend = 1000),
+               data = annotations |> filter(Variable == "Med.:"),
+               linetype="dashed", color = "black", linewidth = 0.5) +
+    geom_text(aes(x = Value, y = 900, label = paste(Variable, Value)),
+              data = annotations |> filter(Variable == "Med.:"),
+              nudge_x = 450, color = "black") + 
+    scale_y_continuous(breaks = seq(0, 1000, 250), limits = c(0, 1000)) +
+    facet_wrap(~ topic, nrow = 3) +
+    labs(x = "Review Length (Characters)", y = "Frequency",
+         title = "Distribution of Review Length by Topic")
+p2
+
+```
+
+All the topics actually have pretty similar review length distributions. We export the potentially negative reviews for manual labeling. 
+
+```{r }
+fn <- "data/allrecipes_df_neg_labs.csv"
+if (!file.exists(fn)){
+    ar_df_long_neg_labs <- ar_df_long_neg |>
+        left_join(ar_classifications, by = join_by(URL, Review_Num)) |>
+        arrange(topic, desc(gamma))
+    write.csv(ar_df_long_neg_labs, fn, row.names = FALSE, fileEncoding = "UTF-8")
+}else{
+    ar_df_long_neg_labs <- read.csv(fn)
+}
+ar_df_long_neg_labs <- ar_df_long_neg_labs |>
+    mutate(topic = ifelse(is.na(topic), 0, topic),
+           gamma = ifelse(is.na(gamma), 0, gamma)) |>
+    na.omit()
+print(nrow(ar_df_long_neg_labs))
+
+```
+
+We have labeled 1,598 observations as either Neutral or Negative in `SENTIMENT`, and we have categorized them by which of nine specific problems they identify (if any). These problems and descriptions of the criteria used to define whether a review identified them are outlined below:
+
+```{r }
+prob <- c("DIRECTIONS", "MEASUREMENTS", "TIMING", "TEMPERATURE", "ING_KEY_MISSING", "ING_FLAVOR_MISSING", "ING_WRONG_INCL", "INAUTHENTIC", "USER_ERROR")
+desc <- c("One or more steps was unclear, incorrect, or missing",
+          "Included too much or too little of one or more ingredients",
+          "Needed more/less time to prep or to finish cooking",
+          "Needed higher/lower temperature to cook or assemble correctly",
+          "Missing a key ingredient",
+          "Missing a flavor ingredient",
+          "Included an incorrect ingredient",
+          "Lacked a resemblance to the dish's traditional preparation/flavor",
+          "Reviewer suspected/admitted they made a mistake")
+tbl <- cbind(prob, desc)
+colnames(tbl) <- c("PROBLEM", "DESCRIPTION")
+kable(tbl, format = "simple")
+
+```
+
+We visualize the frequency and some of the overlap of these problems. 
+
+```{r }
+p3 <- ar_df_long_neg_labs |>
+    upset(sets = prob, group.by = "sets", cutoff = 4,
+          matrix.color = pal[10], main.bar.color = pal[10],
+          sets.bar.color = pal[10], text.scale = 1, show.numbers = "no")
+p3
+
+```
+
+Reviews that identify `MEASUREMENTS` errors are most frequent, whereas reviews that identify `TEMPERATURE` errors are least frequent. When reviews mention two problems, `MEASUREMENTS` is frequently one of them. It is also worth noting that the various ingredient problems frequently occur together, as well as with authenticity problems. Lastly, `TEMPERATURE` errors occur frequently with `TIMING` errors, which is sensible because timing issues can often be solved with temperature changes and vice versa.
+
+We visualize the distribution of problems by topic.
+
+```{r }
+sel <- c("topic", prob)
+prob_by_top <- ar_df_long_neg_labs |>
+    select(all_of(sel)) |>
+    group_by(topic) |>
+    summarize(across(all_of(prob), ~ sum(.x))) |>
+    pivot_longer(cols = !topic, names_to = "Problem", values_to = "Count")
+p4 <- prob_by_top |>
+    filter(topic > 0) |>
+    ggplot(aes(x = reorder(Problem, desc(Count)), y = Count)) + 
+    geom_bar(stat = "identity", color = pal[10], fill = pal[9]) +
+    labs(x = "Problem", y = "Frequency",
+         title = "Distribution of Problems by Topic") +
+    coord_flip() +
+    facet_wrap(~ topic, nrow = 3)
+p4
+
+```
+
+## Secondary Data Preparation for Supervised Learning
+
+```{r }
+sel <- c("ID", prob)
+ar_df_long_neg_labs_only <- ar_df_long_neg_labs |>
+    unite("ID", URL, Review_Num, sep = "_Review_Num_") |>
+    select(all_of(sel)) |>
+    arrange(ID) |>
+    mutate(across(all_of(prob), ~ factor(., levels = c(0,1),
+                                         labels = c("No", "Yes"))))
+ar_df_long_neg_bigrams_sparse <- tidy(ar_df_long_neg_bigrams_dtm) |>
+    right_join(ar_df_long_neg_labs_only |> select(ID),
+               by = join_by(document == ID)) |>
+    arrange(document) |>
+    mutate(term = ifelse(is.na(term), "***_***", term),
+           count = ifelse(is.na(count), 0, count)) |>
+    cast_sparse(document, term, count)
+
+```
+
+```{r }
+set.seed(1006)
+sample <- sample(nrow(ar_df_long_neg_bigrams_sparse),
+                 round(nrow(ar_df_long_neg_bigrams_sparse) * 0.5),
+                 replace = FALSE)
+train_x <- ar_df_long_neg_bigrams_sparse[sample, ]
+train_y <- ar_df_long_neg_labs_only[sample, ]
+validate_test_x <- ar_df_long_neg_bigrams_sparse[-sample, ]
+validate_test_y <- ar_df_long_neg_labs_only[-sample, ]
+sample <- sample(nrow(validate_test_x),
+                 round(nrow(validate_test_x) * 0.5),
+                 replace = FALSE)
+validate_x <- validate_test_x[sample, ]
+validate_y <- validate_test_y[sample, ]
+test_x <- validate_test_x[-sample, ]
+test_y <- validate_test_y[-sample, ]
+
+```
+
+## Model Development
+
+```{r }
+fns <- c("nb1.rds", "nb2.rds", "nb3.rds", "nb4.rds", "nb5.rds", "nb6.rds",
+         "nb7.rds", "nb8.rds", "nb9.rds")
+nbs <- list()
+for (i in 1:length(fns)){
+    if (!file.exists(fns[i])){
+        col <- i + 1
+        nb <- multinomial_naive_bayes(train_x, train_y[, col], laplace = 1)
+        saveRDS(nb, fns[i])
+    }else{
+        nb <- readRDS(fns[i])
+    }
+    nbs[[i]] <- nb
+}
+
+```
+
+```{r }
+fns <- c("svm1.rds", "svm2.rds", "svm3.rds", "svm4.rds", "svm5.rds", "svm6.rds",
+         "svm7.rds", "svm8.rds", "svm9.rds")
+svms <- list()
+ctrl <-  tune.control(sampling = "cross", cross = 10, nrepeat = 1)
+tune_grid <- list(cost = c(0.1, 1, 10, 100, 1000),
+                  gamma = c(0.5, 1, 2, 3, 4))
+for (i in 1:length(fns)){
+    if (!file.exists(fns[i])){
+        col <- i + 1
+        svm_tune <- tune(svm, train.x = train_x, train.y = train_y[, col],
+                         kernel = "radial", ranges = tune_grid,
+                         tunecontrol = ctrl)
+        svm_mod <- svm_tune$best.model
+        saveRDS(svm_mod, fns[i])
+    }else{
+        svm_mod <- readRDS(fns[i])
+    }
+    svms[[i]] <- svm_mod
+}
+
+```
+
+## Model Evaluation
+
+```{r }
+preds <- list()
+cms_complete <- list()
+cms <- list()
+for (i in 1:length(nbs)){
+    nb <- nbs[[i]]
+    nb_pred <- predict(nb, validate_x, type = "class")
+    preds[[i]] <- nb_pred
+    col <- i + 1
+    nbcm_complete <- confusionMatrix(nb_pred, validate_y[, col],
+                                     positive = "Yes")
+    cms_complete[[i]] <- nbcm_complete
+    nbcm <- as.data.frame(nbcm_complete$table)
+    nbcm$Reference <- factor(nbcm$Reference,
+                             levels = rev(levels(nbcm$Reference)))
+    nbcm <- nbcm |>
+        mutate(
+            Label = case_when(
+                Prediction == "No" & Reference == "No" ~ "TN",
+                Prediction == "Yes" & Reference == "Yes" ~ "TP",
+                Prediction == "No" & Reference == "Yes" ~ "FN",
+                Prediction == "Yes" & Reference == "No" ~ "FP"),
+            Model = prob[i])
+    cms[[i]] <- nbcm
+}
+cm <- bind_rows(cms)
+p5 <- cm |>
+    ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
+    geom_tile(col = "black") +
+    geom_text(aes(label = Freq), vjust = -1) +
+    geom_text(aes(label = Label), vjust = 1) + 
+    scale_fill_gradient(low = "white", high = pal[4]) +
+    scale_x_discrete(position = "top") +
+    facet_wrap(Model ~ ., ncol = 5, strip.position = "bottom") +
+    labs(title = "Confusion Matrices for All Naive Bayes Models") +
+    theme(axis.line.x = element_blank(),
+          axis.line.y = element_blank(),
+          axis.text.y = element_text(angle = 90, hjust = 0.5),
+          axis.ticks = element_blank(),
+          legend.position = "bottom",
+          strip.placement = "outside")
+p5
+
+```
+
+```{r }
+by_class <- list()
+overall <- list()
+for (i in 1:length(cms_complete)){
+    cm_complete <- cms_complete[[i]]
+    by_class[[i]] <- as.data.frame(cm_complete$byClass)
+    overall[[i]] <- as.data.frame(cm_complete$overall)
+}
+by_class <- t(round(bind_cols(by_class), 4))
+rownames(by_class) <- prob
+overall <- t(round(bind_cols(overall), 4))
+rownames(overall) <- prob
+metrics <- as.data.frame(cbind(by_class, overall))
+keep <- c("Accuracy", "Kappa", "Precision", "Recall", "F1", "Specificity")
+metrics <- metrics |>
+    select(all_of(keep))
+kable(metrics, format = "simple")
+
+```
+
+```{r }
+preds <- list()
+cms_complete <- list()
+cms <- list()
+for (i in 1:length(svms)){
+    svm_mod <- svms[[i]]
+    svm_pred <- predict(svm_mod, validate_x, type = "class")
+    preds[[i]] <- svm_pred
+    col <- i + 1
+    svmcm_complete <- confusionMatrix(svm_pred, validate_y[, col],
+                                      positive = "Yes")
+    cms_complete[[i]] <- svmcm_complete
+    svmcm <- as.data.frame(svmcm_complete$table)
+    svmcm$Reference <- factor(svmcm$Reference,
+                             levels = rev(levels(svmcm$Reference)))
+    svmcm <- svmcm |>
+        mutate(
+            Label = case_when(
+                Prediction == "No" & Reference == "No" ~ "TN",
+                Prediction == "Yes" & Reference == "Yes" ~ "TP",
+                Prediction == "No" & Reference == "Yes" ~ "FN",
+                Prediction == "Yes" & Reference == "No" ~ "FP"),
+            Model = prob[i])
+    cms[[i]] <- svmcm
+}
+cm <- bind_rows(cms)
+p6 <- cm |>
+    ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
+    geom_tile(col = "black") +
+    geom_text(aes(label = Freq), vjust = -1) +
+    geom_text(aes(label = Label), vjust = 1) + 
+    scale_fill_gradient(low = "white", high = pal[4]) +
+    scale_x_discrete(position = "top") +
+    facet_wrap(Model ~ ., ncol = 5, strip.position = "bottom") +
+    labs(title = "Confusion Matrices for All Support Vector Machine Models") +
+    theme(axis.line.x = element_blank(),
+          axis.line.y = element_blank(),
+          axis.text.y = element_text(angle = 90, hjust = 0.5),
+          axis.ticks = element_blank(),
+          legend.position = "bottom",
+          strip.placement = "outside")
+p6
+
+
+```
+
+```{r }
+by_class <- list()
+overall <- list()
+for (i in 1:length(cms_complete)){
+    cm_complete <- cms_complete[[i]]
+    by_class[[i]] <- as.data.frame(cm_complete$byClass)
+    overall[[i]] <- as.data.frame(cm_complete$overall)
+}
+by_class <- t(round(bind_cols(by_class), 4))
+rownames(by_class) <- prob
+overall <- t(round(bind_cols(overall), 4))
+rownames(overall) <- prob
+metrics <- as.data.frame(cbind(by_class, overall))
+keep <- c("Accuracy", "Kappa", "Precision", "Recall", "F1", "Specificity")
+metrics <- metrics |>
+    select(all_of(keep))
+kable(metrics, format = "simple")
+
+```
+
+
+
+## Conclusion
