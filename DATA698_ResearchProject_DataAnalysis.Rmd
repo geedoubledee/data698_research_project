@@ -29,6 +29,7 @@ library(tidytext)
 library(tidyverse)
 library(topicmodels)
 library(UpSetR)
+library(xgboost)
 
 ```
 
@@ -271,7 +272,7 @@ p2
 
 ```
 
-All the topics actually have pretty similar review length distributions. We export the potentially negative reviews for manual labeling. 
+The topics actually have pretty similar review length distributions. Topic 4 has the highest median review length at 201 characters. We export the potentially negative reviews for manual labeling. 
 
 ```{r }
 fn <- "data/allrecipes_df_neg_labs.csv"
@@ -291,7 +292,21 @@ print(nrow(ar_df_long_neg_labs))
 
 ```
 
-We have labeled 1,598 observations as either Neutral or Negative in `SENTIMENT`, and we have categorized them by which of nine specific problems they identify (if any). These problems and descriptions of the criteria used to define whether a review identified them are outlined below:
+We have labeled 3,398 observations in total: 515 observations from each of the six identified topics, plus 308 observations that were not composed of any significant bigrams and were thus assigned a topic of `NA`. (We have recoded their assigned topic as 0.) Reasons why a review might not be composed of any significant bigrams include:
+
+* the review was devoid of any words (e.g. "!!!" )
+
+* the review contained only stopwords (e.g. "so so")
+
+* all possible bigrams in the review contained stopwords (e.g. "I hated it")
+
+The observations have been labeled in two ways:
+
+1) as either "Neutral" or "Negative" in `SENTIMENT`
+
+2) by which of nine specific problems they identify (if any): `DIRECTIONS`, `MEASUREMENTS`, `TIMING`, `TEMPERATURE`, `ING_KEY_MISSING`, `ING_FLAVOR_MISSING`, `ING_WRONG_INCL`, `INAUTHENTIC`, and `USER_ERROR`
+
+These nine specific problems and descriptions of the criteria used to define whether a review identified them are outlined below:
 
 ```{r }
 prob <- c("DIRECTIONS", "MEASUREMENTS", "TIMING", "TEMPERATURE", "ING_KEY_MISSING", "ING_FLAVOR_MISSING", "ING_WRONG_INCL", "INAUTHENTIC", "USER_ERROR")
@@ -310,14 +325,66 @@ kable(tbl, format = "simple")
 
 ```
 
+Because we only looked at reviews with star ratings of 3 or less, we originally felt it should not be possible for these reviews to receive a "Positive" label for `SENTIMENT`. However, we did encounter review text along the way that was clearly neither "Negative" nor "Neutral," and it's possible the reviewer intended to leave a higher star rating along with their seemingly "Positive" words. For the sake of consistency, we continued to label these "Positive" reviews as "Neutral" so that we could redefine our `SENTIMENT` variable later and eliminate any confusion. To that end, we now replace the `SENTIMENT` variable with the `NEGATIVE` variable, a binary predictor in which a value of 1 indicates the review text expressed a "Negative" sentiment, and a value of 0 indicates it did not. 
+
+```{r }
+ar_df_long_neg_labs <- ar_df_long_neg_labs |>
+    rename(NEGATIVE = SENTIMENT) |>
+    mutate(NEGATIVE = ifelse(NEGATIVE == "Negative", 1, 0))
+
+```
+
+We visualize the frequency of reviews we labeled `NEGATIVE` by star rating.
+
+```{r }
+sel <- c("Negative", "Other")
+sent_star_summ_df <- ar_df_long_neg_labs |>
+    filter(Rating > 0) |>
+    group_by(Rating) |>
+    summarize(Total = n(),
+              Negative = sum(NEGATIVE)) |>
+    ungroup() |>
+    mutate(Rating = paste0(Rating, "★"),
+           Other = Total - Negative) |>
+    pivot_longer(cols = all_of(sel),
+                 names_to = "Category", values_to = "Value") |>
+    mutate(Perc = paste0(round(Value / Total * 100, 1), "%"))
+greys <- brewer.pal(9, "Greys")
+col <- c(pal[8], greys[6])
+fil <- c(pal[7], greys[4])
+title_str <- "Frequency of Reviews Expressing Negative Sentiment by Star Rating"
+p3 <- sent_star_summ_df |>
+    ggplot(aes(x = Category, y = Value,
+               group = Category, color = Category, fill = Category)) +
+    geom_col() +
+    geom_text(aes(label = Perc), vjust = -0.75,
+              size = 4, fontface = "bold") +
+    scale_y_continuous(limits = c(0, 2000), breaks = seq(0, 2000, 250)) +
+    scale_color_manual(values = col) +
+    scale_fill_manual(values = fil) +
+    facet_grid(~ Rating, scales = "free_x", space = "free_x", switch = "y") +
+    labs(x = "Sentiment", y = "Frequency",
+         title = title_str) +
+    theme(legend.position = "none", panel.spacing = unit(0, units = "cm"),
+          strip.placement = "inside",
+          strip.background = element_blank(),
+          strip.text = element_text(size = 12, face = "bold"),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+          plot.title.position = "plot")
+p3
+
+```
+
+Most of the 1 and 2 star reviews we labeled expressed "Negative" sentiment, whereas most of the 3 star reviews we expressed did not. We also encountered more than twice as many 3 star reviews as we did 1 or 2 star reviews during labeling.
+
 We visualize the frequency and some of the overlap of these problems. 
 
 ```{r }
-p3 <- ar_df_long_neg_labs |>
+p4 <- ar_df_long_neg_labs |>
     upset(sets = prob, group.by = "sets", cutoff = 4,
           matrix.color = pal[10], main.bar.color = pal[10],
           sets.bar.color = pal[10], text.scale = 1, show.numbers = "no")
-p3
+p4
 
 ```
 
@@ -332,7 +399,7 @@ prob_by_top <- ar_df_long_neg_labs |>
     group_by(topic) |>
     summarize(across(all_of(prob), ~ sum(.x))) |>
     pivot_longer(cols = !topic, names_to = "Problem", values_to = "Count")
-p4 <- prob_by_top |>
+p5 <- prob_by_top |>
     filter(topic > 0) |>
     ggplot(aes(x = reorder(Problem, desc(Count)), y = Count)) + 
     geom_bar(stat = "identity", color = pal[10], fill = pal[9]) +
@@ -340,18 +407,23 @@ p4 <- prob_by_top |>
          title = "Distribution of Problems by Topic") +
     coord_flip() +
     facet_wrap(~ topic, nrow = 3)
-p4
+p5
 
 ```
+
+While there are some visible differences in the exact frequencies of problems by topic, it is clear that LDA did not segment the topics by the problems, or there would be topics where particular problems are relatively absent and others are relatively dominant. This is not terribly surprising since the problems are non-exclusive, and we only did a moderate amount of data preparation prior to trying to identify the topics before we did manual labeling. 
+
+Since unsupervised learning was insufficient for our needs as anticipated, we now proceed with preparing the data further for supervised learning methods. 
 
 ## Secondary Data Preparation for Supervised Learning
 
 ```{r }
 sel <- c("ID", prob)
-ar_df_long_neg_labs_only <- ar_df_long_neg_labs |>
+ar_df_long_neg_labs_only_num <- ar_df_long_neg_labs |>
     unite("ID", URL, Review_Num, sep = "_Review_Num_") |>
     select(all_of(sel)) |>
-    arrange(ID) |>
+    arrange(ID)
+ar_df_long_neg_labs_only <- ar_df_long_neg_labs_only_num |>
     mutate(across(all_of(prob), ~ factor(., levels = c(0,1),
                                          labels = c("No", "Yes"))))
 ar_df_long_neg_bigrams_sparse <- tidy(ar_df_long_neg_bigrams_dtm) |>
@@ -371,15 +443,19 @@ sample <- sample(nrow(ar_df_long_neg_bigrams_sparse),
                  replace = FALSE)
 train_x <- ar_df_long_neg_bigrams_sparse[sample, ]
 train_y <- ar_df_long_neg_labs_only[sample, ]
+train_y_num <- ar_df_long_neg_labs_only_num[sample, ]
 validate_test_x <- ar_df_long_neg_bigrams_sparse[-sample, ]
 validate_test_y <- ar_df_long_neg_labs_only[-sample, ]
+validate_test_y_num <- ar_df_long_neg_labs_only_num[-sample, ]
 sample <- sample(nrow(validate_test_x),
                  round(nrow(validate_test_x) * 0.5),
                  replace = FALSE)
 validate_x <- validate_test_x[sample, ]
 validate_y <- validate_test_y[sample, ]
+validate_y_num <- validate_test_y_num[sample, ]
 test_x <- validate_test_x[-sample, ]
 test_y <- validate_test_y[-sample, ]
+test_y_num <- validate_test_y_num[-sample, ]
 
 ```
 
@@ -425,6 +501,24 @@ for (i in 1:length(fns)){
 
 ```
 
+```{r }
+fns <- c("xgb1.rds", "xgb2.rds", "xgb3.rds", "xgb4.rds", "xgb5.rds", "xgb6.rds",
+         "xgb7.rds", "xgb8.rds", "xgb9.rds")
+xgbs <- list()
+for (i in 1:length(fns)){
+    if (!file.exists(fns[i])){
+        col <- i + 1
+        xgb <- xgboost(train_x, train_y_num[, col], nrounds = 100,
+                       objective = "binary:hinge", verbose = 0)
+        saveRDS(xgb, fns[i])
+    }else{
+        xgb <- readRDS(fns[i])
+    }
+    xgbs[[i]] <- xgb
+}
+
+```
+
 ## Model Evaluation
 
 ```{r }
@@ -453,7 +547,7 @@ for (i in 1:length(nbs)){
     cms[[i]] <- nbcm
 }
 cm <- bind_rows(cms)
-p5 <- cm |>
+p6 <- cm |>
     ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
     geom_tile(col = "black") +
     geom_text(aes(label = Freq), vjust = -1) +
@@ -468,7 +562,7 @@ p5 <- cm |>
           axis.ticks = element_blank(),
           legend.position = "bottom",
           strip.placement = "outside")
-p5
+p6
 
 ```
 
@@ -518,7 +612,7 @@ for (i in 1:length(svms)){
     cms[[i]] <- svmcm
 }
 cm <- bind_rows(cms)
-p6 <- cm |>
+p7 <- cm |>
     ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
     geom_tile(col = "black") +
     geom_text(aes(label = Freq), vjust = -1) +
@@ -533,8 +627,74 @@ p6 <- cm |>
           axis.ticks = element_blank(),
           legend.position = "bottom",
           strip.placement = "outside")
-p6
+p7
 
+
+```
+
+```{r }
+by_class <- list()
+overall <- list()
+for (i in 1:length(cms_complete)){
+    cm_complete <- cms_complete[[i]]
+    by_class[[i]] <- as.data.frame(cm_complete$byClass)
+    overall[[i]] <- as.data.frame(cm_complete$overall)
+}
+by_class <- t(round(bind_cols(by_class), 4))
+rownames(by_class) <- prob
+overall <- t(round(bind_cols(overall), 4))
+rownames(overall) <- prob
+metrics <- as.data.frame(cbind(by_class, overall))
+keep <- c("Accuracy", "Kappa", "Precision", "Recall", "F1", "Specificity")
+metrics <- metrics |>
+    select(all_of(keep))
+kable(metrics, format = "simple")
+
+```
+
+```{r }
+preds <- list()
+cms_complete <- list()
+cms <- list()
+for (i in 1:length(xgbs)){
+    xgb <- xgbs[[i]]
+    xgb_pred <- predict(xgb, validate_x, type = "class")
+    preds[[i]] <- xgb_pred
+    col <- i + 1
+    xgbcm_complete <- confusionMatrix(as.factor(xgb_pred),
+                                      as.factor(validate_y_num[, col]),
+                                      positive = "1")
+    cms_complete[[i]] <- xgbcm_complete
+    xgbcm <- as.data.frame(xgbcm_complete$table)
+    xgbcm$Reference <- factor(xgbcm$Reference,
+                             levels = rev(levels(xgbcm$Reference)))
+    xgbcm <- xgbcm |>
+        mutate(
+            Label = case_when(
+                Prediction == 0 & Reference == 0 ~ "TN",
+                Prediction == 1 & Reference == 1 ~ "TP",
+                Prediction == 0 & Reference == 1 ~ "FN",
+                Prediction == 1 & Reference == 0 ~ "FP"),
+            Model = prob[i])
+    cms[[i]] <- xgbcm
+}
+cm <- bind_rows(cms)
+p8 <- cm |>
+    ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
+    geom_tile(col = "black") +
+    geom_text(aes(label = Freq), vjust = -1) +
+    geom_text(aes(label = Label), vjust = 1) + 
+    scale_fill_gradient(low = "white", high = pal[4]) +
+    scale_x_discrete(position = "top") +
+    facet_wrap(Model ~ ., ncol = 5, strip.position = "bottom") +
+    labs(title = "Confusion Matrices for All eXtreme Gradiant Boosting Models") +
+    theme(axis.line.x = element_blank(),
+          axis.line.y = element_blank(),
+          axis.text.y = element_text(angle = 90, hjust = 0.5),
+          axis.ticks = element_blank(),
+          legend.position = "bottom",
+          strip.placement = "outside")
+p8
 
 ```
 
