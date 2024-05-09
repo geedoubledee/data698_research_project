@@ -16,6 +16,7 @@ library(caret)
 library(elasticnet)
 library(e1071)
 library(factoextra)
+library(glmnet)
 library(jsonlite)
 library(knitr)
 library(Matrix)
@@ -494,6 +495,10 @@ frac_patt <- c("\\s\\d+slash\\d+\\s")
 dec_patt <- c("\\s\\d+point\\d+\\s")
 num_patt_string <- paste(int_patt, mixed_frac_patt, frac_patt, dec_patt,
                          sep = "|")
+#adapted from https://en.wikipedia.org/wiki/Cooking_weights_and_measures
+meas <- list("drops", "drop", "drs", "dr", "smidgens", "smidgen", "smdgs", "smdg", "smis", "smi", "pinches", "pinch", "pns", "pn", "dashes", "dash", "ds", "teaspoons", "teaspoon", "tsps", "tsp", "t", "tablespoons", "tablespoon", "tbsps", "tbsp", "ounces", "ounce", "oz", "cups", "cup", "c", "pints", "pint", "pts", "pt", "quarts", "quart", "qts", "qt", "gallons", "gallon", "gals", "gal", "pounds", "pound", "lbs", "lb", "large", "small", "medium")
+meas <- lapply(meas, function(x) paste0(" ", x, " "))
+meas_patt_string <- paste(unlist(meas), collapse = "|")
 ar_df_long_neg_ING <- ar_df_long_neg |>
     mutate(Review_Txt = tolower(Review_Txt),
            Review_Txt = paste0(" ", Review_Txt, " "),
@@ -515,6 +520,9 @@ ar_df_long_neg_ING <- ar_df_long_neg |>
            Review_Txt = str_replace_all(Review_Txt,
                                         pattern = ing_patt_string,
                                         replacement = " __ING__ "),
+           Review_Txt = str_replace_all(Review_Txt,
+                                        pattern = meas_patt_string,
+                                        replacement = " __MEAS__ "),
            Review_Txt = str_squish(Review_Txt))
 
 ```
@@ -600,25 +608,24 @@ for (i in 1:length(fns)){
 ```
 
 ```{r }
-# fns <- c("svm1.rds", "svm2.rds", "svm3.rds", "svm4.rds", "svm5.rds", "svm6.rds",
-#          "svm7.rds")
-# svms <- list()
-# ctrl <-  tune.control(sampling = "cross", cross = 10, nrepeat = 1)
-# tune_grid <- list(cost = c(0.1, 1, 10, 100, 1000),
-#                   gamma = c(0.5, 1, 2, 3, 4))
-# for (i in 1:length(fns)){
-#     if (!file.exists(fns[i])){
-#         col <- i + 1
-#         svm_tune <- tune(svm, train.x = train_x, train.y = train_y[, col],
-#                          kernel = "radial", ranges = tune_grid,
-#                          tunecontrol = ctrl)
-#         svm_mod <- svm_tune$best.model
-#         saveRDS(svm_mod, fns[i])
-#     }else{
-#         svm_mod <- readRDS(fns[i])
-#     }
-#     svms[[i]] <- svm_mod
-# }
+fns <- c("svm1.rds", "svm2.rds", "svm3.rds", "svm4.rds", "svm5.rds", "svm6.rds",
+         "svm7.rds")
+svms <- list()
+ctrl <-  tune.control(sampling = "cross", cross = 10, nrepeat = 1)
+tune_grid <- list(cost = c(0.1, 1, 10, 100, 1000))
+for (i in 1:length(fns)){
+    if (!file.exists(fns[i])){
+        col <- i + 1
+        svm_tune <- tune(svm, train.x = train_x, train.y = train_y[, col],
+                         kernel = "linear", ranges = tune_grid,
+                         tunecontrol = ctrl)
+        svm_mod <- svm_tune$best.model
+        saveRDS(svm_mod, fns[i])
+    }else{
+        svm_mod <- readRDS(fns[i])
+    }
+    svms[[i]] <- svm_mod
+}
 
 ```
 
@@ -687,7 +694,7 @@ p6
 
 ```
 
-```{r }
+```{r warning = FALSE, message = FALSE}
 by_class <- list()
 overall <- list()
 for (i in 1:length(cms_complete)){
@@ -708,68 +715,68 @@ kable(metrics, format = "simple")
 ```
 
 ```{r }
-# preds <- list()
-# cms_complete <- list()
-# cms <- list()
-# for (i in 1:length(svms)){
-#     svm_mod <- svms[[i]]
-#     svm_pred <- predict(svm_mod, validate_x, type = "class")
-#     preds[[i]] <- svm_pred
-#     col <- i + 1
-#     svmcm_complete <- confusionMatrix(svm_pred, validate_y[, col],
-#                                       positive = "Yes")
-#     cms_complete[[i]] <- svmcm_complete
-#     svmcm <- as.data.frame(svmcm_complete$table)
-#     svmcm$Reference <- factor(svmcm$Reference,
-#                              levels = rev(levels(svmcm$Reference)))
-#     svmcm <- svmcm |>
-#         mutate(
-#             Label = case_when(
-#                 Prediction == "No" & Reference == "No" ~ "TN",
-#                 Prediction == "Yes" & Reference == "Yes" ~ "TP",
-#                 Prediction == "No" & Reference == "Yes" ~ "FN",
-#                 Prediction == "Yes" & Reference == "No" ~ "FP"),
-#             Model = prob[i])
-#     cms[[i]] <- svmcm
-# }
-# cm <- bind_rows(cms)
-# p7 <- cm |>
-#     ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
-#     geom_tile(col = "black") +
-#     geom_text(aes(label = Freq), vjust = -1) +
-#     geom_text(aes(label = Label), vjust = 1) + 
-#     scale_fill_gradient(low = "white", high = pal[4]) +
-#     scale_x_discrete(position = "top") +
-#     facet_wrap(Model ~ ., ncol = 5, strip.position = "bottom") +
-#     labs(title = "Confusion Matrices for All Support Vector Machine Models") +
-#     theme(axis.line.x = element_blank(),
-#           axis.line.y = element_blank(),
-#           axis.text.y = element_text(angle = 90, hjust = 0.5),
-#           axis.ticks = element_blank(),
-#           legend.position = "bottom",
-#           strip.placement = "outside")
-# p7
+preds <- list()
+cms_complete <- list()
+cms <- list()
+for (i in 1:length(svms)){
+    svm_mod <- svms[[i]]
+    svm_pred <- predict(svm_mod, validate_x, type = "class")
+    preds[[i]] <- svm_pred
+    col <- i + 1
+    svmcm_complete <- confusionMatrix(svm_pred, validate_y[, col],
+                                      positive = "Yes")
+    cms_complete[[i]] <- svmcm_complete
+    svmcm <- as.data.frame(svmcm_complete$table)
+    svmcm$Reference <- factor(svmcm$Reference,
+                             levels = rev(levels(svmcm$Reference)))
+    svmcm <- svmcm |>
+        mutate(
+            Label = case_when(
+                Prediction == "No" & Reference == "No" ~ "TN",
+                Prediction == "Yes" & Reference == "Yes" ~ "TP",
+                Prediction == "No" & Reference == "Yes" ~ "FN",
+                Prediction == "Yes" & Reference == "No" ~ "FP"),
+            Model = prob[i])
+    cms[[i]] <- svmcm
+}
+cm <- bind_rows(cms)
+p7 <- cm |>
+    ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
+    geom_tile(col = "black") +
+    geom_text(aes(label = Freq), vjust = -1) +
+    geom_text(aes(label = Label), vjust = 1) +
+    scale_fill_gradient(low = "white", high = pal[4]) +
+    scale_x_discrete(position = "top") +
+    facet_wrap(Model ~ ., ncol = 5, strip.position = "bottom") +
+    labs(title = "Confusion Matrices for All Support Vector Machine Models") +
+    theme(axis.line.x = element_blank(),
+          axis.line.y = element_blank(),
+          axis.text.y = element_text(angle = 90, hjust = 0.5),
+          axis.ticks = element_blank(),
+          legend.position = "bottom",
+          strip.placement = "outside")
+p7
 
 
 ```
 
-```{r }
-# by_class <- list()
-# overall <- list()
-# for (i in 1:length(cms_complete)){
-#     cm_complete <- cms_complete[[i]]
-#     by_class[[i]] <- as.data.frame(cm_complete$byClass)
-#     overall[[i]] <- as.data.frame(cm_complete$overall)
-# }
-# by_class <- t(round(bind_cols(by_class), 4))
-# rownames(by_class) <- prob
-# overall <- t(round(bind_cols(overall), 4))
-# rownames(overall) <- prob
-# metrics <- as.data.frame(cbind(by_class, overall))
-# keep <- c("Accuracy", "Kappa", "Precision", "Recall", "F1", "Specificity")
-# metrics <- metrics |>
-#     select(all_of(keep))
-# kable(metrics, format = "simple")
+```{r warning = FALSE, message = FALSE}
+by_class <- list()
+overall <- list()
+for (i in 1:length(cms_complete)){
+    cm_complete <- cms_complete[[i]]
+    by_class[[i]] <- as.data.frame(cm_complete$byClass)
+    overall[[i]] <- as.data.frame(cm_complete$overall)
+}
+by_class <- t(round(bind_cols(by_class), 4))
+rownames(by_class) <- prob
+overall <- t(round(bind_cols(overall), 4))
+rownames(overall) <- prob
+metrics <- as.data.frame(cbind(by_class, overall))
+keep <- c("Accuracy", "Kappa", "Precision", "Recall", "F1", "Specificity")
+metrics <- metrics |>
+    select(all_of(keep))
+kable(metrics, format = "simple")
 
 ```
 
@@ -819,7 +826,7 @@ p8
 
 ```
 
-```{r }
+```{r warning = FALSE, message = FALSE}
 by_class <- list()
 overall <- list()
 for (i in 1:length(cms_complete)){
