@@ -22,6 +22,7 @@ library(knitr)
 library(Matrix)
 library(naivebayes)
 library(packrat)
+library(quanteda)
 library(RColorBrewer)
 library(snakecase)
 library(sparcl)
@@ -647,20 +648,39 @@ for (i in 1:length(fns)){
 
 ```
 
+```{r logm}
+fns <- c("logm1.rds", "logm2.rds", "logm3.rds", "logm4.rds", "logm5.rds", "logm6.rds", "logm7.rds")
+logms <- list()
+for (i in 1:length(fns)){
+    if (!file.exists(fns[i])){
+        col <- i + 1
+        logm <- cv.glmnet(train_x, train_y[, col],
+                          family = "binomial", alpha = 1,
+                          type.logistic = "modified.Newton",
+                          type.measure = "auc", nfolds = 10)
+        saveRDS(logm, fns[i])
+    }else{
+        logm <- readRDS(fns[i])
+    }
+    logms[[i]] <- logm
+}
+
+```
+
 ## Model Evaluation
 
 ```{r }
-preds <- list()
-cms_complete <- list()
-cms <- list()
+nb_preds <- list()
+nb_cms_complete <- list()
+nb_cms <- list()
 for (i in 1:length(nbs)){
     nb <- nbs[[i]]
     nb_pred <- predict(nb, validate_x, type = "class")
-    preds[[i]] <- nb_pred
+    nb_preds[[i]] <- nb_pred
     col <- i + 1
     nbcm_complete <- confusionMatrix(nb_pred, validate_y[, col],
                                      positive = "Yes")
-    cms_complete[[i]] <- nbcm_complete
+    nb_cms_complete[[i]] <- nbcm_complete
     nbcm <- as.data.frame(nbcm_complete$table)
     nbcm$Reference <- factor(nbcm$Reference,
                              levels = rev(levels(nbcm$Reference)))
@@ -672,60 +692,36 @@ for (i in 1:length(nbs)){
                 Prediction == "No" & Reference == "Yes" ~ "FN",
                 Prediction == "Yes" & Reference == "No" ~ "FP"),
             Model = prob[i])
-    cms[[i]] <- nbcm
+    nb_cms[[i]] <- nbcm
 }
-cm <- bind_rows(cms)
+cm <- bind_rows(nb_cms)
 p6 <- cm |>
     ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
     geom_tile(col = "black") +
     geom_text(aes(label = Freq), vjust = -1) +
     geom_text(aes(label = Label), vjust = 1) + 
-    scale_fill_gradient(low = "white", high = pal[4]) +
+    scale_fill_gradient(low = "white", high = pal[9]) +
     scale_x_discrete(position = "top") +
-    facet_wrap(Model ~ ., ncol = 5, strip.position = "bottom") +
+    facet_wrap(Model ~ ., ncol = 4, strip.position = "bottom") +
     labs(title = "Confusion Matrices for All Naive Bayes Models") +
     theme(axis.line.x = element_blank(),
           axis.line.y = element_blank(),
           axis.text.y = element_text(angle = 90, hjust = 0.5),
           axis.ticks = element_blank(),
-          legend.position = "bottom",
+          legend.position = "right",
           strip.placement = "outside")
-p6
 
-```
-
-```{r warning = FALSE, message = FALSE}
-by_class <- list()
-overall <- list()
-for (i in 1:length(cms_complete)){
-    cm_complete <- cms_complete[[i]]
-    by_class[[i]] <- as.data.frame(cm_complete$byClass)
-    overall[[i]] <- as.data.frame(cm_complete$overall)
-}
-by_class <- t(round(bind_cols(by_class), 4))
-rownames(by_class) <- prob
-overall <- t(round(bind_cols(overall), 4))
-rownames(overall) <- prob
-metrics <- as.data.frame(cbind(by_class, overall))
-keep <- c("Accuracy", "Kappa", "Precision", "Recall", "F1", "Specificity")
-metrics <- metrics |>
-    select(all_of(keep))
-kable(metrics, format = "simple")
-
-```
-
-```{r }
-preds <- list()
-cms_complete <- list()
-cms <- list()
+svm_preds <- list()
+svm_cms_complete <- list()
+svm_cms <- list()
 for (i in 1:length(svms)){
     svm_mod <- svms[[i]]
     svm_pred <- predict(svm_mod, validate_x, type = "class")
-    preds[[i]] <- svm_pred
+    svm_preds[[i]] <- svm_pred
     col <- i + 1
     svmcm_complete <- confusionMatrix(svm_pred, validate_y[, col],
                                       positive = "Yes")
-    cms_complete[[i]] <- svmcm_complete
+    svm_cms_complete[[i]] <- svmcm_complete
     svmcm <- as.data.frame(svmcm_complete$table)
     svmcm$Reference <- factor(svmcm$Reference,
                              levels = rev(levels(svmcm$Reference)))
@@ -737,62 +733,37 @@ for (i in 1:length(svms)){
                 Prediction == "No" & Reference == "Yes" ~ "FN",
                 Prediction == "Yes" & Reference == "No" ~ "FP"),
             Model = prob[i])
-    cms[[i]] <- svmcm
+    svm_cms[[i]] <- svmcm
 }
-cm <- bind_rows(cms)
+cm <- bind_rows(svm_cms)
 p7 <- cm |>
     ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
     geom_tile(col = "black") +
     geom_text(aes(label = Freq), vjust = -1) +
     geom_text(aes(label = Label), vjust = 1) +
-    scale_fill_gradient(low = "white", high = pal[4]) +
+    scale_fill_gradient(low = "white", high = pal[9]) +
     scale_x_discrete(position = "top") +
-    facet_wrap(Model ~ ., ncol = 5, strip.position = "bottom") +
+    facet_wrap(Model ~ ., ncol = 4, strip.position = "bottom") +
     labs(title = "Confusion Matrices for All Support Vector Machine Models") +
     theme(axis.line.x = element_blank(),
           axis.line.y = element_blank(),
           axis.text.y = element_text(angle = 90, hjust = 0.5),
           axis.ticks = element_blank(),
-          legend.position = "bottom",
+          legend.position = "right",
           strip.placement = "outside")
-p7
 
-
-```
-
-```{r warning = FALSE, message = FALSE}
-by_class <- list()
-overall <- list()
-for (i in 1:length(cms_complete)){
-    cm_complete <- cms_complete[[i]]
-    by_class[[i]] <- as.data.frame(cm_complete$byClass)
-    overall[[i]] <- as.data.frame(cm_complete$overall)
-}
-by_class <- t(round(bind_cols(by_class), 4))
-rownames(by_class) <- prob
-overall <- t(round(bind_cols(overall), 4))
-rownames(overall) <- prob
-metrics <- as.data.frame(cbind(by_class, overall))
-keep <- c("Accuracy", "Kappa", "Precision", "Recall", "F1", "Specificity")
-metrics <- metrics |>
-    select(all_of(keep))
-kable(metrics, format = "simple")
-
-```
-
-```{r }
-preds <- list()
-cms_complete <- list()
-cms <- list()
+xgb_preds <- list()
+xgb_cms_complete <- list()
+xgb_cms <- list()
 for (i in 1:length(xgbs)){
     xgb <- xgbs[[i]]
     xgb_pred <- predict(xgb, validate_x, type = "class")
-    preds[[i]] <- xgb_pred
+    xgb_preds[[i]] <- xgb_pred
     col <- i + 1
     xgbcm_complete <- confusionMatrix(as.factor(xgb_pred),
                                       as.factor(validate_y_num[, col]),
                                       positive = "1")
-    cms_complete[[i]] <- xgbcm_complete
+    xgb_cms_complete[[i]] <- xgbcm_complete
     xgbcm <- as.data.frame(xgbcm_complete$table)
     xgbcm$Reference <- factor(xgbcm$Reference,
                              levels = rev(levels(xgbcm$Reference)))
@@ -804,29 +775,78 @@ for (i in 1:length(xgbs)){
                 Prediction == 0 & Reference == 1 ~ "FN",
                 Prediction == 1 & Reference == 0 ~ "FP"),
             Model = prob[i])
-    cms[[i]] <- xgbcm
+    xgb_cms[[i]] <- xgbcm
 }
-cm <- bind_rows(cms)
+cm <- bind_rows(xgb_cms)
 p8 <- cm |>
     ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
     geom_tile(col = "black") +
     geom_text(aes(label = Freq), vjust = -1) +
     geom_text(aes(label = Label), vjust = 1) + 
-    scale_fill_gradient(low = "white", high = pal[4]) +
+    scale_fill_gradient(low = "white", high = pal[9]) +
     scale_x_discrete(position = "top") +
-    facet_wrap(Model ~ ., ncol = 5, strip.position = "bottom") +
+    facet_wrap(Model ~ ., ncol = 4, strip.position = "bottom") +
     labs(title = "Confusion Matrices for All eXtreme Gradiant Boosting Models") +
     theme(axis.line.x = element_blank(),
           axis.line.y = element_blank(),
           axis.text.y = element_text(angle = 90, hjust = 0.5),
           axis.ticks = element_blank(),
-          legend.position = "bottom",
+          legend.position = "right",
           strip.placement = "outside")
+
+logm_preds <- list()
+logm_cms_complete <- list()
+logm_cms <- list()
+for (i in 1:length(logms)){
+    logm <- logms[[i]]
+    logm_pred <- predict(logm, validate_x, type = "class")
+    logm_preds[[i]] <- logm_pred
+    col <- i + 1
+    logmcm_complete <- confusionMatrix(as.factor(logm_pred), validate_y[, col],
+                                       positive = "Yes")
+    logm_cms_complete[[i]] <- logmcm_complete
+    logmcm <- as.data.frame(logmcm_complete$table)
+    logmcm$Reference <- factor(logmcm$Reference,
+                               levels = rev(levels(logmcm$Reference)))
+    logmcm <- logmcm |>
+        mutate(
+            Label = case_when(
+                Prediction == "No" & Reference == "No" ~ "TN",
+                Prediction == "Yes" & Reference == "Yes" ~ "TP",
+                Prediction == "No" & Reference == "Yes" ~ "FN",
+                Prediction == "Yes" & Reference == "No" ~ "FP"),
+            Model = prob[i])
+    logm_cms[[i]] <- logmcm
+}
+cm <- bind_rows(logm_cms)
+p9 <- cm |>
+    ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
+    geom_tile(col = "black") +
+    geom_text(aes(label = Freq), vjust = -1) +
+    geom_text(aes(label = Label), vjust = 1) + 
+    scale_fill_gradient(low = "white", high = pal[9]) +
+    scale_x_discrete(position = "top") +
+    facet_wrap(Model ~ ., ncol = 4, strip.position = "bottom") +
+    labs(title = "Confusion Matrices for All Logistic Regression Models") +
+    theme(axis.line.x = element_blank(),
+          axis.line.y = element_blank(),
+          axis.text.y = element_text(angle = 90, hjust = 0.5),
+          axis.ticks = element_blank(),
+          legend.position = "right",
+          strip.placement = "outside")
+
+```
+
+```{r echo = FALSE}
+p6
+p7
 p8
+p9
 
 ```
 
 ```{r warning = FALSE, message = FALSE}
+cms_complete <- c(nb_cms_complete, svm_cms_complete, xgb_cms_complete, logm_cms_complete)
 by_class <- list()
 overall <- list()
 for (i in 1:length(cms_complete)){
@@ -834,14 +854,25 @@ for (i in 1:length(cms_complete)){
     by_class[[i]] <- as.data.frame(cm_complete$byClass)
     overall[[i]] <- as.data.frame(cm_complete$overall)
 }
+col1 <- as.data.frame(c(rep("Naive Bayes", 7), rep("Support Vector Machine", 7),
+          rep("eXtreme Gradient Boosting", 7), rep("Logistic Regression", 7)))
+colnames(col1) <- c("Model")
+col2 <- as.data.frame(rep(prob, 4))
+colnames(col2) <- c("Problem")
 by_class <- t(round(bind_cols(by_class), 4))
-rownames(by_class) <- prob
+rownames(by_class) <- NULL
 overall <- t(round(bind_cols(overall), 4))
-rownames(overall) <- prob
-metrics <- as.data.frame(cbind(by_class, overall))
-keep <- c("Accuracy", "Kappa", "Precision", "Recall", "F1", "Specificity")
+rownames(overall) <- NULL
+metrics <- as.data.frame(cbind(col1, col2, by_class, overall))
+keep <- c("Model", "Problem", "Accuracy", "Kappa", "Precision",
+          "Recall", "F1", "Specificity")
+mods <- c("Naive Bayes", "Support Vector Machine", "eXtreme Gradient Boosting",
+           "Logistic Regression")
 metrics <- metrics |>
-    select(all_of(keep))
+    select(all_of(keep)) |>
+    mutate(Model = factor(Model, levels = mods),
+           Problem = factor(Problem, levels = prob)) |>
+    arrange(Problem, Model)
 kable(metrics, format = "simple")
 
 ```
