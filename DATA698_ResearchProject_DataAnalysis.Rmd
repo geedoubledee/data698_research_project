@@ -528,17 +528,30 @@ ar_df_long_neg_ING <- ar_df_long_neg |>
 
 ```
 
-We tokenize the refined text into unigrams.
+We tokenize the refined text into unigrams, bigrams, and trigrams.
 
 ```{r }
 keep <- c("URL", "Review_Num", "Review_Txt")
-ar_df_long_neg_unigrams <- ar_df_long_neg_ING |>
+ar_df_long_neg_alln <- ar_df_long_neg_ING |>
     select(all_of(keep)) |>
-    unnest_tokens(output = UNIGRAM, input = Review_Txt,
-                  token = "words", to_lower = FALSE, strip_punct = FALSE) |>
-    count(URL, Review_Num, UNIGRAM, name = "COUNT") |>
+    unnest_tokens(output = TOKEN, input = Review_Txt,
+                  token = "ngrams", n = 3, n_min = 1,
+                  ngram_delim = ".", to_lower = FALSE,
+                  stopwords = stop_w$WORD) |>
+    count(URL, Review_Num, TOKEN, name = "COUNT") |>
     ungroup() |>
-    filter(UNIGRAM != "'")
+    mutate(n = str_count(TOKEN, "\\.") + 1)
+ar_df_long_neg_n1 <- ar_df_long_neg_alln |>
+    filter(n == 1) |>
+    select(-n)
+ar_df_long_neg_n2 <- ar_df_long_neg_alln |>
+    filter(n == 2) |>
+    select(-n)
+ar_df_long_neg_n3 <- ar_df_long_neg_alln |>
+    filter(n == 3) |>
+    select(-n)
+ar_df_long_neg_alln <- ar_df_long_neg_alln |>
+    select(-n)
 
 ```
 
@@ -549,12 +562,54 @@ ar_df_long_neg_labs_only_num <- ar_df_long_neg_labs |>
     select(all_of(sel)) |>
     arrange(ID)
 ar_df_long_neg_labs_only <- ar_df_long_neg_labs_only_num |>
-    mutate(across(all_of(prob), ~ factor(., levels = c(0,1),
+    mutate(across(all_of(prob), ~ factor(., levels = c(0, 1),
                                          labels = c("No", "Yes"))))
-ar_df_long_neg_unigrams_dtm <- ar_df_long_neg_unigrams |>
+ar_df_long_neg_tokens_dtm1 <- ar_df_long_neg_n1 |>
     unite("ID", URL, Review_Num, sep = "_Review_Num_") |>
-    cast_dtm(ID, UNIGRAM, COUNT)
-ar_df_long_neg_unigrams_sparse <- tidy(ar_df_long_neg_unigrams_dtm) |>
+    group_by(TOKEN) |>
+    filter(n() > 1) |>
+    ungroup() |>
+    cast_dtm(ID, TOKEN, COUNT)
+ar_df_long_neg_tokens_dtm2 <- ar_df_long_neg_n2 |>
+    unite("ID", URL, Review_Num, sep = "_Review_Num_") |>
+    group_by(TOKEN) |>
+    filter(n() > 1) |>
+    ungroup() |>
+    cast_dtm(ID, TOKEN, COUNT)
+ar_df_long_neg_tokens_dtm3 <- ar_df_long_neg_n3 |>
+    unite("ID", URL, Review_Num, sep = "_Review_Num_") |>
+    group_by(TOKEN) |>
+    filter(n() > 1) |>
+    ungroup() |>
+    cast_dtm(ID, TOKEN, COUNT)
+ar_df_long_neg_tokens_dtm4 <- ar_df_long_neg_alln |>
+    unite("ID", URL, Review_Num, sep = "_Review_Num_") |>
+    group_by(TOKEN) |>
+    filter(n() > 1) |>
+    ungroup() |>
+    cast_dtm(ID, TOKEN, COUNT)
+ar_df_long_neg_tokens_sparse1 <- tidy(ar_df_long_neg_tokens_dtm1) |>
+    right_join(ar_df_long_neg_labs_only |> select(ID),
+               by = join_by(document == ID)) |>
+    arrange(document) |>
+    mutate(term = ifelse(is.na(term), "***__***", term),
+           count = ifelse(is.na(count), 1, count)) |>
+    cast_sparse(document, term, count)
+ar_df_long_neg_tokens_sparse2 <- tidy(ar_df_long_neg_tokens_dtm2) |>
+    right_join(ar_df_long_neg_labs_only |> select(ID),
+               by = join_by(document == ID)) |>
+    arrange(document) |>
+    mutate(term = ifelse(is.na(term), "***__***", term),
+           count = ifelse(is.na(count), 1, count)) |>
+    cast_sparse(document, term, count)
+ar_df_long_neg_tokens_sparse3 <- tidy(ar_df_long_neg_tokens_dtm3) |>
+    right_join(ar_df_long_neg_labs_only |> select(ID),
+               by = join_by(document == ID)) |>
+    arrange(document) |>
+    mutate(term = ifelse(is.na(term), "***__***", term),
+           count = ifelse(is.na(count), 1, count)) |>
+    cast_sparse(document, term, count)
+ar_df_long_neg_tokens_sparse4 <- tidy(ar_df_long_neg_tokens_dtm4) |>
     right_join(ar_df_long_neg_labs_only |> select(ID),
                by = join_by(document == ID)) |>
     arrange(document) |>
@@ -568,22 +623,37 @@ ar_df_long_neg_unigrams_sparse <- tidy(ar_df_long_neg_unigrams_dtm) |>
 
 ```{r }
 set.seed(1006)
-sample <- sample(nrow(ar_df_long_neg_unigrams_sparse),
-                 round(nrow(ar_df_long_neg_unigrams_sparse) * 0.5),
+sample <- sample(nrow(ar_df_long_neg_tokens_sparse1),
+                 round(nrow(ar_df_long_neg_tokens_sparse1) * 0.5),
                  replace = FALSE)
-train_x <- ar_df_long_neg_unigrams_sparse[sample, ]
+train_x1 <- ar_df_long_neg_tokens_sparse1[sample, ]
+train_x2 <- ar_df_long_neg_tokens_sparse2[sample, ]
+train_x3 <- ar_df_long_neg_tokens_sparse3[sample, ]
+train_x4 <- ar_df_long_neg_tokens_sparse4[sample, ]
+train_x_all <- list(train_x1, train_x2, train_x3, train_x4)
 train_y <- ar_df_long_neg_labs_only[sample, ]
 train_y_num <- ar_df_long_neg_labs_only_num[sample, ]
-validate_test_x <- ar_df_long_neg_unigrams_sparse[-sample, ]
+validate_test_x1 <- ar_df_long_neg_tokens_sparse1[-sample, ]
+validate_test_x2 <- ar_df_long_neg_tokens_sparse2[-sample, ]
+validate_test_x3 <- ar_df_long_neg_tokens_sparse3[-sample, ]
+validate_test_x4 <- ar_df_long_neg_tokens_sparse4[-sample, ]
 validate_test_y <- ar_df_long_neg_labs_only[-sample, ]
 validate_test_y_num <- ar_df_long_neg_labs_only_num[-sample, ]
-sample <- sample(nrow(validate_test_x),
-                 round(nrow(validate_test_x) * 0.5),
+sample <- sample(nrow(validate_test_x1),
+                 round(nrow(validate_test_x1) * 0.5),
                  replace = FALSE)
-validate_x <- validate_test_x[sample, ]
+validate_x1 <- validate_test_x1[sample, ]
+validate_x2 <- validate_test_x2[sample, ]
+validate_x3 <- validate_test_x3[sample, ]
+validate_x4 <- validate_test_x4[sample, ]
+validate_x_all <- list(validate_x1, validate_x2, validate_x3, validate_x4)
 validate_y <- validate_test_y[sample, ]
 validate_y_num <- validate_test_y_num[sample, ]
-test_x <- validate_test_x[-sample, ]
+test_x1 <- validate_test_x1[-sample, ]
+test_x2 <- validate_test_x2[-sample, ]
+test_x3 <- validate_test_x3[-sample, ]
+test_x4 <- validate_test_x4[-sample, ]
+test_x_all <- list(test_x1, test_x2, test_x3, test_x4)
 test_y <- validate_test_y[-sample, ]
 test_y_num <- validate_test_y_num[-sample, ]
 
@@ -591,19 +661,27 @@ test_y_num <- validate_test_y_num[-sample, ]
 
 ## Model Development
 
-```{r }
+```{r warning = FALSE, message = FALSE}
+fol <- c("models/")
+dat <- c("uni_", "bi_", "tri_", "all_")
 fns <- c("nb1.rds", "nb2.rds", "nb3.rds", "nb4.rds", "nb5.rds", "nb6.rds",
          "nb7.rds")
 nbs <- list()
-for (i in 1:length(fns)){
-    if (!file.exists(fns[i])){
-        col <- i + 1
-        nb <- multinomial_naive_bayes(train_x, train_y[, col], laplace = 1)
-        saveRDS(nb, fns[i])
-    }else{
-        nb <- readRDS(fns[i])
+count = 0
+for (i in 1:length(dat)){
+    for (j in 1:length(fns)){
+        fn <- paste0(fol, dat[i], fns[j])
+        if (!file.exists(fn)){
+            col <- j + 1
+            nb <- multinomial_naive_bayes(train_x_all[[i]],
+                                          train_y[, col], laplace = 1)
+            saveRDS(nb, fn)
+        }else{
+            nb <- readRDS(fn)
+        }
+        count = count + 1
+        nbs[[count]] <- nb
     }
-    nbs[[i]] <- nb
 }
 
 ```
@@ -612,20 +690,26 @@ for (i in 1:length(fns)){
 fns <- c("svm1.rds", "svm2.rds", "svm3.rds", "svm4.rds", "svm5.rds", "svm6.rds",
          "svm7.rds")
 svms <- list()
+count = 0
 ctrl <-  tune.control(sampling = "cross", cross = 10, nrepeat = 1)
 tune_grid <- list(cost = c(0.1, 1, 10, 100, 1000))
-for (i in 1:length(fns)){
-    if (!file.exists(fns[i])){
-        col <- i + 1
-        svm_tune <- tune(svm, train.x = train_x, train.y = train_y[, col],
-                         kernel = "linear", ranges = tune_grid,
-                         tunecontrol = ctrl)
-        svm_mod <- svm_tune$best.model
-        saveRDS(svm_mod, fns[i])
-    }else{
-        svm_mod <- readRDS(fns[i])
+for (i in 1:length(dat)){
+    for (j in 1:length(fns)){
+        fn <- paste0(fol, dat[i], fns[j])
+        if (!file.exists(fn)){
+            col <- j + 1
+            svm_tune <- tune(svm, train.x = train_x_all[[i]],
+                             train.y = train_y[, col],
+                             kernel = "linear", ranges = tune_grid,
+                             tunecontrol = ctrl)
+            svm_mod <- svm_tune$best.model
+            saveRDS(svm_mod, fn)
+        }else{
+            svm_mod <- readRDS(fn)
+        }
+        count = count + 1
+        svms[[count]] <- svm_mod
     }
-    svms[[i]] <- svm_mod
 }
 
 ```
@@ -634,16 +718,21 @@ for (i in 1:length(fns)){
 fns <- c("xgb1.rds", "xgb2.rds", "xgb3.rds", "xgb4.rds", "xgb5.rds", "xgb6.rds",
          "xgb7.rds")
 xgbs <- list()
-for (i in 1:length(fns)){
-    if (!file.exists(fns[i])){
-        col <- i + 1
-        xgb <- xgboost(train_x, train_y_num[, col], nrounds = 100,
+count = 0
+for (i in 1:length(dat)){
+    for (j in 1:length(fns)){
+        fn <- paste0(fol, dat[i], fns[j])
+        if (!file.exists(fn)){
+            col <- j + 1
+            xgb <- xgboost(train_x_all[[i]], train_y_num[, col], nrounds = 100,
                        objective = "binary:hinge", verbose = 0)
-        saveRDS(xgb, fns[i])
-    }else{
-        xgb <- readRDS(fns[i])
+            saveRDS(xgb, fn)
+        }else{
+            xgb <- readRDS(fn)
+        }
+        count = count + 1
+        xgbs[[count]] <- xgb
     }
-    xgbs[[i]] <- xgb
 }
 
 ```
@@ -651,18 +740,23 @@ for (i in 1:length(fns)){
 ```{r logm}
 fns <- c("logm1.rds", "logm2.rds", "logm3.rds", "logm4.rds", "logm5.rds", "logm6.rds", "logm7.rds")
 logms <- list()
-for (i in 1:length(fns)){
-    if (!file.exists(fns[i])){
-        col <- i + 1
-        logm <- cv.glmnet(train_x, train_y[, col],
+count = 0
+for (i in 1:length(dat)){
+    for (j in 1:length(fns)){
+        fn <- paste0(fol, dat[i], fns[j])
+        if (!file.exists(fn)){
+            col <- j + 1
+            logm <- cv.glmnet(train_x_all[[i]], train_y[, col],
                           family = "binomial", alpha = 1,
                           type.logistic = "modified.Newton",
                           type.measure = "auc", nfolds = 10)
-        saveRDS(logm, fns[i])
-    }else{
-        logm <- readRDS(fns[i])
+            saveRDS(logm, fn)
+        }else{
+            logm <- readRDS(fn)
+        }
+        count = count + 1
+        logms[[count]] <- logm
     }
-    logms[[i]] <- logm
 }
 
 ```
@@ -673,11 +767,18 @@ for (i in 1:length(fns)){
 nb_preds <- list()
 nb_cms_complete <- list()
 nb_cms <- list()
+max_mod_num <- 7
 for (i in 1:length(nbs)){
+    dat_num <- (i - 1) %/% 7 + 1
+    mod_num <- i %% 7
+    if (mod_num > 0){
+        col <- mod_num + 1
+    }else{
+        col <- max_mod_num + 1
+    }
     nb <- nbs[[i]]
-    nb_pred <- predict(nb, validate_x, type = "class")
+    nb_pred <- predict(nb, validate_x_all[[dat_num]], type = "class")
     nb_preds[[i]] <- nb_pred
-    col <- i + 1
     nbcm_complete <- confusionMatrix(nb_pred, validate_y[, col],
                                      positive = "Yes")
     nb_cms_complete[[i]] <- nbcm_complete
@@ -691,34 +792,23 @@ for (i in 1:length(nbs)){
                 Prediction == "Yes" & Reference == "Yes" ~ "TP",
                 Prediction == "No" & Reference == "Yes" ~ "FN",
                 Prediction == "Yes" & Reference == "No" ~ "FP"),
-            Model = prob[i])
+            Model = paste0(dat[dat_num], prob[col - 1]))
     nb_cms[[i]] <- nbcm
 }
-cm <- bind_rows(nb_cms)
-p6 <- cm |>
-    ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
-    geom_tile(col = "black") +
-    geom_text(aes(label = Freq), vjust = -1) +
-    geom_text(aes(label = Label), vjust = 1) + 
-    scale_fill_gradient(low = "white", high = pal[9]) +
-    scale_x_discrete(position = "top") +
-    facet_wrap(Model ~ ., ncol = 4, strip.position = "bottom") +
-    labs(title = "Confusion Matrices for All Naive Bayes Models") +
-    theme(axis.line.x = element_blank(),
-          axis.line.y = element_blank(),
-          axis.text.y = element_text(angle = 90, hjust = 0.5),
-          axis.ticks = element_blank(),
-          legend.position = "right",
-          strip.placement = "outside")
-
 svm_preds <- list()
 svm_cms_complete <- list()
 svm_cms <- list()
 for (i in 1:length(svms)){
+    dat_num <- (i - 1) %/% 7 + 1
+    mod_num <- i %% 7
+    if (mod_num > 0){
+        col <- mod_num + 1
+    }else{
+        col <- max_mod_num + 1
+    }
     svm_mod <- svms[[i]]
-    svm_pred <- predict(svm_mod, validate_x, type = "class")
+    svm_pred <- predict(svm_mod, validate_x_all[[dat_num]], type = "class")
     svm_preds[[i]] <- svm_pred
-    col <- i + 1
     svmcm_complete <- confusionMatrix(svm_pred, validate_y[, col],
                                       positive = "Yes")
     svm_cms_complete[[i]] <- svmcm_complete
@@ -732,34 +822,23 @@ for (i in 1:length(svms)){
                 Prediction == "Yes" & Reference == "Yes" ~ "TP",
                 Prediction == "No" & Reference == "Yes" ~ "FN",
                 Prediction == "Yes" & Reference == "No" ~ "FP"),
-            Model = prob[i])
+            Model = paste0(dat[dat_num], prob[col - 1]))
     svm_cms[[i]] <- svmcm
 }
-cm <- bind_rows(svm_cms)
-p7 <- cm |>
-    ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
-    geom_tile(col = "black") +
-    geom_text(aes(label = Freq), vjust = -1) +
-    geom_text(aes(label = Label), vjust = 1) +
-    scale_fill_gradient(low = "white", high = pal[9]) +
-    scale_x_discrete(position = "top") +
-    facet_wrap(Model ~ ., ncol = 4, strip.position = "bottom") +
-    labs(title = "Confusion Matrices for All Support Vector Machine Models") +
-    theme(axis.line.x = element_blank(),
-          axis.line.y = element_blank(),
-          axis.text.y = element_text(angle = 90, hjust = 0.5),
-          axis.ticks = element_blank(),
-          legend.position = "right",
-          strip.placement = "outside")
-
 xgb_preds <- list()
 xgb_cms_complete <- list()
 xgb_cms <- list()
 for (i in 1:length(xgbs)){
+    dat_num <- (i - 1) %/% 7 + 1
+    mod_num <- i %% 7
+    if (mod_num > 0){
+        col <- mod_num + 1
+    }else{
+        col <- max_mod_num + 1
+    }
     xgb <- xgbs[[i]]
-    xgb_pred <- predict(xgb, validate_x, type = "class")
+    xgb_pred <- predict(xgb, validate_x_all[[dat_num]], type = "class")
     xgb_preds[[i]] <- xgb_pred
-    col <- i + 1
     xgbcm_complete <- confusionMatrix(as.factor(xgb_pred),
                                       as.factor(validate_y_num[, col]),
                                       positive = "1")
@@ -774,36 +853,26 @@ for (i in 1:length(xgbs)){
                 Prediction == 1 & Reference == 1 ~ "TP",
                 Prediction == 0 & Reference == 1 ~ "FN",
                 Prediction == 1 & Reference == 0 ~ "FP"),
-            Model = prob[i])
+            Model = paste0(dat[dat_num], prob[col - 1]))
     xgb_cms[[i]] <- xgbcm
 }
-cm <- bind_rows(xgb_cms)
-p8 <- cm |>
-    ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
-    geom_tile(col = "black") +
-    geom_text(aes(label = Freq), vjust = -1) +
-    geom_text(aes(label = Label), vjust = 1) + 
-    scale_fill_gradient(low = "white", high = pal[9]) +
-    scale_x_discrete(position = "top") +
-    facet_wrap(Model ~ ., ncol = 4, strip.position = "bottom") +
-    labs(title = "Confusion Matrices for All eXtreme Gradiant Boosting Models") +
-    theme(axis.line.x = element_blank(),
-          axis.line.y = element_blank(),
-          axis.text.y = element_text(angle = 90, hjust = 0.5),
-          axis.ticks = element_blank(),
-          legend.position = "right",
-          strip.placement = "outside")
-
 logm_preds <- list()
 logm_cms_complete <- list()
 logm_cms <- list()
 for (i in 1:length(logms)){
+    dat_num <- (i - 1) %/% 7 + 1
+    mod_num <- i %% 7
+    if (mod_num > 0){
+        col <- mod_num + 1
+    }else{
+        col <- max_mod_num + 1
+    }
     logm <- logms[[i]]
-    logm_pred <- predict(logm, validate_x, type = "class")
+    logm_pred <- predict(logm, validate_x_all[[dat_num]], type = "class")
     logm_preds[[i]] <- logm_pred
-    col <- i + 1
-    logmcm_complete <- confusionMatrix(as.factor(logm_pred), validate_y[, col],
-                                       positive = "Yes")
+    logmcm_complete <- confusionMatrix(factor(logm_pred,
+                                              levels = c("No", "Yes")),
+                                       validate_y[, col], positive = "Yes")
     logm_cms_complete[[i]] <- logmcm_complete
     logmcm <- as.data.frame(logmcm_complete$table)
     logmcm$Reference <- factor(logmcm$Reference,
@@ -815,33 +884,10 @@ for (i in 1:length(logms)){
                 Prediction == "Yes" & Reference == "Yes" ~ "TP",
                 Prediction == "No" & Reference == "Yes" ~ "FN",
                 Prediction == "Yes" & Reference == "No" ~ "FP"),
-            Model = prob[i])
+            Model = paste0(dat[dat_num], prob[col - 1]))
     logm_cms[[i]] <- logmcm
 }
-cm <- bind_rows(logm_cms)
-p9 <- cm |>
-    ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
-    geom_tile(col = "black") +
-    geom_text(aes(label = Freq), vjust = -1) +
-    geom_text(aes(label = Label), vjust = 1) + 
-    scale_fill_gradient(low = "white", high = pal[9]) +
-    scale_x_discrete(position = "top") +
-    facet_wrap(Model ~ ., ncol = 4, strip.position = "bottom") +
-    labs(title = "Confusion Matrices for All Logistic Regression Models") +
-    theme(axis.line.x = element_blank(),
-          axis.line.y = element_blank(),
-          axis.text.y = element_text(angle = 90, hjust = 0.5),
-          axis.ticks = element_blank(),
-          legend.position = "right",
-          strip.placement = "outside")
 
-```
-
-```{r echo = FALSE}
-p6
-p7
-p8
-p9
 
 ```
 
@@ -854,26 +900,126 @@ for (i in 1:length(cms_complete)){
     by_class[[i]] <- as.data.frame(cm_complete$byClass)
     overall[[i]] <- as.data.frame(cm_complete$overall)
 }
-col1 <- as.data.frame(c(rep("Naive Bayes", 7), rep("Support Vector Machine", 7),
-          rep("eXtreme Gradient Boosting", 7), rep("Logistic Regression", 7)))
+col1 <- as.data.frame(c(rep("Naive Bayes", 28),
+                        rep("Support Vector Machine", 28),
+                        rep("eXtreme Gradient Boosting", 28),
+                        rep("Logistic Regression", 28)))
 colnames(col1) <- c("Model")
-col2 <- as.data.frame(rep(prob, 4))
+col2 <- as.data.frame(rep(prob, 16))
 colnames(col2) <- c("Problem")
+col3 <- as.data.frame(rep(c(rep("Unigrams", 7),
+                          rep("Bigrams", 7),
+                          rep("Trigrams", 7),
+                          rep("All", 7)), 4))
+colnames(col3) <- c("Token")
 by_class <- t(round(bind_cols(by_class), 4))
 rownames(by_class) <- NULL
 overall <- t(round(bind_cols(overall), 4))
 rownames(overall) <- NULL
-metrics <- as.data.frame(cbind(col1, col2, by_class, overall))
-keep <- c("Model", "Problem", "Accuracy", "Kappa", "Precision",
-          "Recall", "F1", "Specificity")
+metrics <- as.data.frame(cbind(col1, col2, col3, by_class, overall))
+keep <- c("Model", "Problem", "Token", "Accuracy", "Precision", "Recall", "F1")
 mods <- c("Naive Bayes", "Support Vector Machine", "eXtreme Gradient Boosting",
            "Logistic Regression")
 metrics <- metrics |>
     select(all_of(keep)) |>
     mutate(Model = factor(Model, levels = mods),
            Problem = factor(Problem, levels = prob)) |>
-    arrange(Problem, Model)
+    group_by(Problem, Model) |>
+    filter(F1 == max(F1, na.rm = TRUE)) |>
+    arrange(Problem, desc(F1))
 kable(metrics, format = "simple")
+
+```
+
+## Model Improvement
+
+```{r }
+corr <- cor(as.matrix(ar_df_long_neg_tokens_sparse1))
+corr[upper.tri(corr)] <- 0
+diag(corr) <- 0
+# data.new <- 
+  # data[, !apply(tmp, 2, function(x) any(abs(x) > 0.99, na.rm = TRUE))]
+# head(data.new)
+
+corr2 <- cor(as.matrix(ar_df_long_neg_tokens_sparse2))
+corr3 <- cor(as.matrix(ar_df_long_neg_tokens_sparse3))
+
+```
+
+```{r }
+# cm <- bind_rows(nb_cms)
+# p6 <- cm |>
+#     ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
+#     geom_tile(col = "black") +
+#     geom_text(aes(label = Freq), vjust = -1) +
+#     geom_text(aes(label = Label), vjust = 1) + 
+#     scale_fill_gradient(low = "white", high = pal[9]) +
+#     scale_x_discrete(position = "top") +
+#     facet_wrap(Model ~ ., ncol = 7, strip.position = "bottom") +
+#     labs(title = "Confusion Matrices for All Naive Bayes Models") +
+#     theme(axis.line.x = element_blank(),
+#           axis.line.y = element_blank(),
+#           axis.text.y = element_text(angle = 90, hjust = 0.5),
+#           axis.ticks = element_blank(),
+#           legend.position = "right",
+#           strip.placement = "outside")
+# p6
+# cm <- bind_rows(svm_cms)
+# p7 <- cm |>
+#     ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
+#     geom_tile(col = "black") +
+#     geom_text(aes(label = Freq), vjust = -1) +
+#     geom_text(aes(label = Label), vjust = 1) +
+#     scale_fill_gradient(low = "white", high = pal[9]) +
+#     scale_x_discrete(position = "top") +
+#     facet_wrap(Model ~ ., ncol = 4, strip.position = "bottom") +
+#     labs(title = "Confusion Matrices for All Support Vector Machine Models") +
+#     theme(axis.line.x = element_blank(),
+#           axis.line.y = element_blank(),
+#           axis.text.y = element_text(angle = 90, hjust = 0.5),
+#           axis.ticks = element_blank(),
+#           legend.position = "right",
+#           strip.placement = "outside")
+# cm <- bind_rows(xgb_cms)
+# p8 <- cm |>
+#     ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
+#     geom_tile(col = "black") +
+#     geom_text(aes(label = Freq), vjust = -1) +
+#     geom_text(aes(label = Label), vjust = 1) + 
+#     scale_fill_gradient(low = "white", high = pal[9]) +
+#     scale_x_discrete(position = "top") +
+#     facet_wrap(Model ~ ., ncol = 4, strip.position = "bottom") +
+#     labs(title = "Confusion Matrices for All eXtreme Gradiant Boosting Models") +
+#     theme(axis.line.x = element_blank(),
+#           axis.line.y = element_blank(),
+#           axis.text.y = element_text(angle = 90, hjust = 0.5),
+#           axis.ticks = element_blank(),
+#           legend.position = "right",
+#           strip.placement = "outside")
+# cm <- bind_rows(logm_cms)
+# p9 <- cm |>
+#     ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
+#     geom_tile(col = "black") +
+#     geom_text(aes(label = Freq), vjust = -1) +
+#     geom_text(aes(label = Label), vjust = 1) + 
+#     scale_fill_gradient(low = "white", high = pal[9]) +
+#     scale_x_discrete(position = "top") +
+#     facet_wrap(Model ~ ., ncol = 4, strip.position = "bottom") +
+#     labs(title = "Confusion Matrices for All Logistic Regression Models") +
+#     theme(axis.line.x = element_blank(),
+#           axis.line.y = element_blank(),
+#           axis.text.y = element_text(angle = 90, hjust = 0.5),
+#           axis.ticks = element_blank(),
+#           legend.position = "right",
+#           strip.placement = "outside")
+
+```
+
+```{r echo = FALSE}
+# p6
+# p7
+# p8
+# p9
 
 ```
 
