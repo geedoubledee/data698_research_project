@@ -567,25 +567,25 @@ ar_df_long_neg_labs_only <- ar_df_long_neg_labs_only_num |>
 ar_df_long_neg_tokens_dtm1 <- ar_df_long_neg_n1 |>
     unite("ID", URL, Review_Num, sep = "_Review_Num_") |>
     group_by(TOKEN) |>
-    filter(n() > 1) |>
+    filter(n() > 2) |>
     ungroup() |>
     cast_dtm(ID, TOKEN, COUNT)
 ar_df_long_neg_tokens_dtm2 <- ar_df_long_neg_n2 |>
     unite("ID", URL, Review_Num, sep = "_Review_Num_") |>
     group_by(TOKEN) |>
-    filter(n() > 1) |>
+    filter(n() > 2) |>
     ungroup() |>
     cast_dtm(ID, TOKEN, COUNT)
 ar_df_long_neg_tokens_dtm3 <- ar_df_long_neg_n3 |>
     unite("ID", URL, Review_Num, sep = "_Review_Num_") |>
     group_by(TOKEN) |>
-    filter(n() > 1) |>
+    filter(n() > 2) |>
     ungroup() |>
     cast_dtm(ID, TOKEN, COUNT)
 ar_df_long_neg_tokens_dtm4 <- ar_df_long_neg_alln |>
     unite("ID", URL, Review_Num, sep = "_Review_Num_") |>
     group_by(TOKEN) |>
-    filter(n() > 1) |>
+    filter(n() > 2) |>
     ungroup() |>
     cast_dtm(ID, TOKEN, COUNT)
 ar_df_long_neg_tokens_sparse1 <- tidy(ar_df_long_neg_tokens_dtm1) |>
@@ -714,7 +714,7 @@ for (i in 1:length(dat)){
 
 ```
 
-```{r }
+```{r warning = FALSE, message = FALSE}
 fns <- c("xgb1.rds", "xgb2.rds", "xgb3.rds", "xgb4.rds", "xgb5.rds", "xgb6.rds",
          "xgb7.rds")
 xgbs <- list()
@@ -934,15 +934,318 @@ kable(metrics, format = "simple")
 ## Model Improvement
 
 ```{r }
-corr <- cor(as.matrix(ar_df_long_neg_tokens_sparse1))
-corr[upper.tri(corr)] <- 0
-diag(corr) <- 0
-# data.new <- 
-  # data[, !apply(tmp, 2, function(x) any(abs(x) > 0.99, na.rm = TRUE))]
-# head(data.new)
+fn <- "data/high_corr.csv"
+if (!file.exists(fn)){
+    corr <- cor(as.matrix(ar_df_long_neg_tokens_sparse1))
+    corr[upper.tri(corr)] <- 0
+    diag(corr) <- 0
+    corr2 <- cor(as.matrix(ar_df_long_neg_tokens_sparse2))
+    corr2[upper.tri(corr2)] <- 0
+    diag(corr2) <- 0
+    corr3 <- cor(as.matrix(ar_df_long_neg_tokens_sparse3))
+    corr3[upper.tri(corr3)] <- 0
+    diag(corr3) <- 0
+    high_corr_uni <- colnames(corr[, apply(corr, 2, 
+                                           function(x) any(abs(x) > 0.9,
+                                                           na.rm = TRUE))])
+    high_corr_bi <- colnames(corr2[, apply(corr2, 2,
+                                           function(x) any(abs(x) > 0.9,
+                                                           na.rm = TRUE))])
+    high_corr_tri <- colnames(corr3[, apply(corr3, 2,
+                                            function(x) any(abs(x) > 0.9,
+                                                            na.rm = TRUE))])
+    high_corr <- as.data.frame(c(high_corr_uni,
+                                 high_corr_bi,
+                                 high_corr_tri))
+    colnames(high_corr) <- c("Variable")
+    write.csv(high_corr, fn, row.names = FALSE, fileEncoding = "UTF-8")
+}else{
+    high_corr <- read.csv(fn)
+}
 
-corr2 <- cor(as.matrix(ar_df_long_neg_tokens_sparse2))
-corr3 <- cor(as.matrix(ar_df_long_neg_tokens_sparse3))
+```
+
+```{r }
+copy <- train_x_all
+rem <- as.character(high_corr$Variable)
+for (i in 1:length(copy)){
+    train_x <- train_x_all[[i]]
+    validate_x <- validate_x_all[[i]]
+    test_x <- validate_x_all[[i]]
+    train_x_all[[i]] <- train_x[, !colnames(train_x) %in% rem]
+	validate_x_all[[i]] <- validate_x[, !colnames(validate_x) %in% rem]
+	test_x_all[[i]] <- test_x[, !colnames(test_x) %in% rem]
+}
+
+```
+
+```{r nb2, warning = FALSE, message = FALSE}
+fol <- c("models2/")
+dat <- c("uni_", "bi_", "tri_", "all_")
+fns <- c("nb1.rds", "nb2.rds", "nb3.rds", "nb4.rds", "nb5.rds", "nb6.rds",
+         "nb7.rds")
+nbs <- list()
+count = 0
+for (i in 1:length(dat)){
+    for (j in 1:length(fns)){
+        fn <- paste0(fol, dat[i], fns[j])
+        if (!file.exists(fn)){
+            col <- j + 1
+            nb <- multinomial_naive_bayes(train_x_all[[i]],
+                                          train_y[, col], laplace = 1)
+            saveRDS(nb, fn)
+        }else{
+            nb <- readRDS(fn)
+        }
+        count = count + 1
+        nbs[[count]] <- nb
+    }
+}
+
+```
+
+```{r svm2}
+fns <- c("svm1.rds", "svm2.rds", "svm3.rds", "svm4.rds", "svm5.rds", "svm6.rds",
+         "svm7.rds")
+svms <- list()
+count = 0
+ctrl <-  tune.control(sampling = "cross", cross = 10, nrepeat = 1)
+tune_grid <- list(cost = c(0.1, 1, 10, 100, 1000))
+for (i in 1:length(dat)){
+    for (j in 1:length(fns)){
+        fn <- paste0(fol, dat[i], fns[j])
+        if (!file.exists(fn)){
+            col <- j + 1
+            svm_tune <- tune(svm, train.x = train_x_all[[i]],
+                             train.y = train_y[, col],
+                             kernel = "linear", ranges = tune_grid,
+                             tunecontrol = ctrl)
+            svm_mod <- svm_tune$best.model
+            saveRDS(svm_mod, fn)
+        }else{
+            svm_mod <- readRDS(fn)
+        }
+        count = count + 1
+        svms[[count]] <- svm_mod
+    }
+}
+
+```
+
+```{r xgb2, warning = FALSE, message = FALSE}
+fns <- c("xgb1.rds", "xgb2.rds", "xgb3.rds", "xgb4.rds", "xgb5.rds", "xgb6.rds",
+         "xgb7.rds")
+xgbs <- list()
+count = 0
+for (i in 1:length(dat)){
+    for (j in 1:length(fns)){
+        fn <- paste0(fol, dat[i], fns[j])
+        if (!file.exists(fn)){
+            col <- j + 1
+            xgb <- xgboost(train_x_all[[i]], train_y_num[, col], nrounds = 100,
+                       objective = "binary:hinge", verbose = 0)
+            saveRDS(xgb, fn)
+        }else{
+            xgb <- readRDS(fn)
+        }
+        count = count + 1
+        xgbs[[count]] <- xgb
+    }
+}
+
+```
+
+```{r logm2}
+fns <- c("logm1.rds", "logm2.rds", "logm3.rds", "logm4.rds", "logm5.rds", "logm6.rds", "logm7.rds")
+logms <- list()
+count = 0
+for (i in 1:length(dat)){
+    for (j in 1:length(fns)){
+        fn <- paste0(fol, dat[i], fns[j])
+        if (!file.exists(fn)){
+            col <- j + 1
+            logm <- cv.glmnet(train_x_all[[i]], train_y[, col],
+                          family = "binomial", alpha = 1,
+                          type.logistic = "modified.Newton",
+                          type.measure = "auc", nfolds = 10)
+            saveRDS(logm, fn)
+        }else{
+            logm <- readRDS(fn)
+        }
+        count = count + 1
+        logms[[count]] <- logm
+    }
+}
+
+```
+
+## Model Evaluation
+
+```{r }
+nb_preds <- list()
+nb_cms_complete <- list()
+nb_cms <- list()
+max_mod_num <- 7
+for (i in 1:length(nbs)){
+    dat_num <- (i - 1) %/% 7 + 1
+    mod_num <- i %% 7
+    if (mod_num > 0){
+        col <- mod_num + 1
+    }else{
+        col <- max_mod_num + 1
+    }
+    nb <- nbs[[i]]
+    nb_pred <- predict(nb, validate_x_all[[dat_num]], type = "class")
+    nb_preds[[i]] <- nb_pred
+    nbcm_complete <- confusionMatrix(nb_pred, validate_y[, col],
+                                     positive = "Yes")
+    nb_cms_complete[[i]] <- nbcm_complete
+    nbcm <- as.data.frame(nbcm_complete$table)
+    nbcm$Reference <- factor(nbcm$Reference,
+                             levels = rev(levels(nbcm$Reference)))
+    nbcm <- nbcm |>
+        mutate(
+            Label = case_when(
+                Prediction == "No" & Reference == "No" ~ "TN",
+                Prediction == "Yes" & Reference == "Yes" ~ "TP",
+                Prediction == "No" & Reference == "Yes" ~ "FN",
+                Prediction == "Yes" & Reference == "No" ~ "FP"),
+            Model = paste0(dat[dat_num], prob[col - 1]))
+    nb_cms[[i]] <- nbcm
+}
+svm_preds <- list()
+svm_cms_complete <- list()
+svm_cms <- list()
+for (i in 1:length(svms)){
+    dat_num <- (i - 1) %/% 7 + 1
+    mod_num <- i %% 7
+    if (mod_num > 0){
+        col <- mod_num + 1
+    }else{
+        col <- max_mod_num + 1
+    }
+    svm_mod <- svms[[i]]
+    svm_pred <- predict(svm_mod, validate_x_all[[dat_num]], type = "class")
+    svm_preds[[i]] <- svm_pred
+    svmcm_complete <- confusionMatrix(svm_pred, validate_y[, col],
+                                      positive = "Yes")
+    svm_cms_complete[[i]] <- svmcm_complete
+    svmcm <- as.data.frame(svmcm_complete$table)
+    svmcm$Reference <- factor(svmcm$Reference,
+                             levels = rev(levels(svmcm$Reference)))
+    svmcm <- svmcm |>
+        mutate(
+            Label = case_when(
+                Prediction == "No" & Reference == "No" ~ "TN",
+                Prediction == "Yes" & Reference == "Yes" ~ "TP",
+                Prediction == "No" & Reference == "Yes" ~ "FN",
+                Prediction == "Yes" & Reference == "No" ~ "FP"),
+            Model = paste0(dat[dat_num], prob[col - 1]))
+    svm_cms[[i]] <- svmcm
+}
+xgb_preds <- list()
+xgb_cms_complete <- list()
+xgb_cms <- list()
+for (i in 1:length(xgbs)){
+    dat_num <- (i - 1) %/% 7 + 1
+    mod_num <- i %% 7
+    if (mod_num > 0){
+        col <- mod_num + 1
+    }else{
+        col <- max_mod_num + 1
+    }
+    xgb <- xgbs[[i]]
+    xgb_pred <- predict(xgb, validate_x_all[[dat_num]], type = "class")
+    xgb_preds[[i]] <- xgb_pred
+    xgbcm_complete <- confusionMatrix(as.factor(xgb_pred),
+                                      as.factor(validate_y_num[, col]),
+                                      positive = "1")
+    xgb_cms_complete[[i]] <- xgbcm_complete
+    xgbcm <- as.data.frame(xgbcm_complete$table)
+    xgbcm$Reference <- factor(xgbcm$Reference,
+                             levels = rev(levels(xgbcm$Reference)))
+    xgbcm <- xgbcm |>
+        mutate(
+            Label = case_when(
+                Prediction == 0 & Reference == 0 ~ "TN",
+                Prediction == 1 & Reference == 1 ~ "TP",
+                Prediction == 0 & Reference == 1 ~ "FN",
+                Prediction == 1 & Reference == 0 ~ "FP"),
+            Model = paste0(dat[dat_num], prob[col - 1]))
+    xgb_cms[[i]] <- xgbcm
+}
+logm_preds <- list()
+logm_cms_complete <- list()
+logm_cms <- list()
+for (i in 1:length(logms)){
+    dat_num <- (i - 1) %/% 7 + 1
+    mod_num <- i %% 7
+    if (mod_num > 0){
+        col <- mod_num + 1
+    }else{
+        col <- max_mod_num + 1
+    }
+    logm <- logms[[i]]
+    logm_pred <- predict(logm, validate_x_all[[dat_num]], type = "class")
+    logm_preds[[i]] <- logm_pred
+    logmcm_complete <- confusionMatrix(factor(logm_pred,
+                                              levels = c("No", "Yes")),
+                                       validate_y[, col], positive = "Yes")
+    logm_cms_complete[[i]] <- logmcm_complete
+    logmcm <- as.data.frame(logmcm_complete$table)
+    logmcm$Reference <- factor(logmcm$Reference,
+                               levels = rev(levels(logmcm$Reference)))
+    logmcm <- logmcm |>
+        mutate(
+            Label = case_when(
+                Prediction == "No" & Reference == "No" ~ "TN",
+                Prediction == "Yes" & Reference == "Yes" ~ "TP",
+                Prediction == "No" & Reference == "Yes" ~ "FN",
+                Prediction == "Yes" & Reference == "No" ~ "FP"),
+            Model = paste0(dat[dat_num], prob[col - 1]))
+    logm_cms[[i]] <- logmcm
+}
+
+
+```
+
+```{r warning = FALSE, message = FALSE}
+cms_complete <- c(nb_cms_complete, svm_cms_complete, xgb_cms_complete, logm_cms_complete)
+by_class <- list()
+overall <- list()
+for (i in 1:length(cms_complete)){
+    cm_complete <- cms_complete[[i]]
+    by_class[[i]] <- as.data.frame(cm_complete$byClass)
+    overall[[i]] <- as.data.frame(cm_complete$overall)
+}
+col1 <- as.data.frame(c(rep("Naive Bayes", 28),
+                        rep("Support Vector Machine", 28),
+                        rep("eXtreme Gradient Boosting", 28),
+                        rep("Logistic Regression", 28)))
+colnames(col1) <- c("Model")
+col2 <- as.data.frame(rep(prob, 16))
+colnames(col2) <- c("Problem")
+col3 <- as.data.frame(rep(c(rep("Unigrams", 7),
+                          rep("Bigrams", 7),
+                          rep("Trigrams", 7),
+                          rep("All", 7)), 4))
+colnames(col3) <- c("Token")
+by_class <- t(round(bind_cols(by_class), 4))
+rownames(by_class) <- NULL
+overall <- t(round(bind_cols(overall), 4))
+rownames(overall) <- NULL
+metrics <- as.data.frame(cbind(col1, col2, col3, by_class, overall))
+keep <- c("Model", "Problem", "Token", "Accuracy", "Precision", "Recall", "F1")
+mods <- c("Naive Bayes", "Support Vector Machine", "eXtreme Gradient Boosting",
+           "Logistic Regression")
+metrics <- metrics |>
+    select(all_of(keep)) |>
+    mutate(Model = factor(Model, levels = mods),
+           Problem = factor(Problem, levels = prob)) |>
+    group_by(Problem, Model) |>
+    filter(F1 == max(F1, na.rm = TRUE)) |>
+    arrange(Problem, desc(F1))
+kable(metrics, format = "simple")
 
 ```
 
