@@ -1,15 +1,13 @@
 ---
-title: "DATA698: Research Project: Data Analysis"
+title: "Classification of Recipe Review Text According to Problems Identified by Reviewers"
 author: "Glen Dale Davis"
 date: "2024-03-16"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 ```
-
-## Packages
 
 ```{r packages, warning = FALSE, message = FALSE}
 library(caret)
@@ -31,11 +29,74 @@ library(xgboost)
 
 ```
 
+## Abstract
+
+Home cooks of all skill levels frequent AllRecipes.com for meal inspiration, but the quality of user-submitted recipe content on the site varies widely. We have identified seven kinds of non-exclusive problems (related to missing/misleading steps, incorrect measurements, incorrect cooking/preparation time, incorrect temperature, a key/flavor ingredient being missing or an incorrect ingredient being included, and user error) that recipe reviewers might claim a recipe suffers from. Classifying these reviews according to the problems they identify could enable AllRecipes.com to effectively hone in on their recipe content that is most likely to need reevaluation.
+
+The methodology we developed in order to predict problems asserted in recipe reviews included: isolating reviews most likely to assert problems; employing unsupervised learning with Latent Dirichlet Allocation (LDA) to divide reviews into topics; manually labeling reviews according to sentiment expressed and problems asserted; employing supervised learning with Naive Bayes, Support Vector Machine (SVM), eXtreme Gradient Boosting, and Logistic Regression models to predict problem classes using only unigrams, only bigrams, only trigrams, or a combination of all three; and attempting to improve performance by removing highly correlated ngram features.
+
+Only two problems were frequent enough for us to build moderately successful models: `MEASUREMENTS` and `INGREDIENTS`. The best `MEASUREMENTS` classifier was an SVM model using a combination of ngrams, and it achieved an F1 Score of 71.74 percent while being 79.86 percent accurate. The best `INGREDIENTS` classifier was a Naive Bayes model using only unigrams that achieved an F1 Score of 64.11 percent while being 70.20 percent accurate.
+
+### Keywords: natural language processing, text classification, topic modeling, support vector machine, naive bayes
+
 ## Introduction
 
-We load recipe review data that we gathered from AllRecipes.com in early 2024. The reviews we gathered included each recipe's "Most Helpful Positive Review," which is the first review that Allrecipes.com shows users and is determined by user input, as well as each recipe's nine most recent reviews. Some recipes didn't have any positive reviews marked helpful by other users, so their "Most Helpful Positive Review" field was blank, and some recipes had been reviewed less than nine times. So there is more review data available for some recipes than others.
+According to [AllRecipes.com's About Us page](https://www.allrecipes.com/about-us-6648102), "Only the best recipes achieve Kitchen Approved status and get published and promoted" on the Web site. When users submit recipes for "Kitchen Approved" consideration on AllRecipes.com, the Web site's team of recipe editors claims to check the content for "Completion," "Accuracy," and "Replication," among other things. The issues these quality assurance checks are supposed to cover are described below:
 
-```{r data}
+```{r check_desc}
+check <- c("Completion", "Accuracy", "Replication")
+desc <- c("The ingredient list is evaluated to be sure it is complete, that measurements are correct, and that ingredients are properly ordered and grouped according to their use.", "Serving sizes and yields are checked for accuracy and to be sure that recipes reflect USDA dietary recommendations.", "Recipes are reviewed and edited to ensure they are replicable when following the instructions. Editors assess the techniques, equipment, and appliances used in the recipes, and  explain any intermediate or advanced techniques with simple language and visuals.")
+tbl <- cbind(check, desc)
+colnames(tbl) <- c("CHECK", "DESCRIPTION")
+kable(tbl, format = "simple")
+
+```
+
+However, the quality of user-submitted recipe content on the site still varies widely, and users frequently express opinions that suggest "Kitchen Approved" recipes suffer from problems even after having gone through AllRecipes.com's purported quality assurance checks. These recipes may very well benefit from further review, and we believe utilizing text classification to predict problems asserted by reviews could help AllRecipes.com focus its attention on recipes that reviewers believe need it most.
+
+We have identified seven distinct, but non-exclusive problems that users might claim published recipes suffer from, and descriptions of these problems are below:
+
+```{r prob_desc1}
+prob <- c("DIRECTIONS", "MEASUREMENTS", "TIMING", "TEMPERATURE",
+          "INGREDIENTS", "INAUTHENTIC", "USER_ERROR")
+desc <- c("One or more steps was unclear, incorrect, or missing",
+          "Included too much or too little of one or more ingredients",
+          "Needed more/less time to prep or to finish cooking",
+          "Needed higher/lower temperature to cook or assemble correctly",
+          "Missing a key/flavor ingredient or included an incorrect ingredient",
+          "Lacked a resemblance to the dish's traditional preparation/flavor",
+          "Reviewer suspected/admitted they made a mistake")
+tbl <- cbind(prob, desc)
+colnames(tbl) <- c("PROBLEM", "DESCRIPTION")
+kable(tbl, format = "simple")
+
+```
+
+The question we intended to answer with our analysis was:
+
+**Can AllRecipes.com review text be classified according to the problems reviewers are claiming recipes suffer from?**
+
+To answer this question, we utilized a combination of unsupervised and supervised learning techniques. Of the 134,800 total reviews we gathered, we grouped the 14,954 reviews with a star rating of three or below into six topics using LDA, and we labeled 3,398 of these reviews according to sentiment expressed and problems asserted. We generated four featuresets for these reviews: one containing only unigrams, only containing only bigrams, one containing only trigrams, and a combined featureset containing all three. Four kinds of models were trained on each featureset, and we needed seven versions of each kind of model per featureset (one for each non-exclusive problem class).
+
+## Literature Review
+
+Our literature review focused on: unsupervised learning techniques for reducing the amount of time and labor supervised learning techniques would require; comparisons of several supervised learning techniques for natural language processing; choices of ngram tokenization; metrics for assessing classifier performance when classes are both imbalanced and non-exclusive; and special considerations when working with sparse matrices.
+
+## Methodology
+
+In order to predict the problems asserted in recipe reviews, we developed the following methodology:
+
+First, we isolated the reviews most likely to assert problems, i.e. those with a rating of three or fewer stars. While some positive-leaning reviews might also have identified recipe problems, it was reasonable for us to assume that negative-leaning reviews would be more likely to do so, and we expected 3-star and below reviews to express more negative sentiment than 4- or 5-star reviews would.
+
+Then we employed LDA to fuzzy cluster the reviews into an optimal number of topics based on their bigrams. We chose bigrams because they include more context than unigrams, and some words that are commonly considered stopwords for text data were useful for our analysis. Many reviews included text like "too much" or "not enough," both of which could indicate `MEASUREMENTS` errors, and we hoped LDA would group reviews together based on similar informative language like this so that the next step of our methodology, manual labeling, might be faster. The optimal number of topics turned out to be six.
+
+Reviews were manually labeled according to sentiment expressed and problems asserted. Once that was completed, we employed Naive Bayes, Support Vector Machine (SVM), eXtreme Gradient Boosting, and Logistic Regression models to predict problem classes using only unigrams, only bigrams, only trigrams, or a combination of all three. Models were then ranked by their F1 Scores on each of the seven problem classes. 
+
+Finally, we attempted to improve performance for all models by removing highly correlated ngram features from all featuresets. 
+
+## Experimentation & Results
+
+```{r load_data}
 base <- "https://raw.githubusercontent.com/geedoubledee/data698_research_project/main/data/allrecipes_df_pt_"
 exts <- c("1.csv", "2.csv", "3.csv", "4.csv", "5.csv")
 for (i in 1:length(exts)){
@@ -53,17 +114,11 @@ links_df <- read.csv(url)
 
 ```
 
-Home cooks of all skill levels frequent AllRecipes.com for meal inspiration, but the quality of user-submitted recipe content on the site varies widely. We have identified nine kinds of errors (related to missing or misleading steps, incorrect measurements, incorrect cooking or preparation time, incorrect temperature, a key ingredient being missing, a flavor ingredient being missing, an incorrect ingredient being included, and user error) that recipes might suffer from. These errors are generally evident in the reviews related to a recipe, although different users frequently highlight different errors or propose alternative solutions to the same error.
+The reviews we gathered included each recipe's "Most Helpful Positive Review," which is the first review that Allrecipes.com shows users and is determined by user input, as well as each recipe's nine most recent reviews. Some recipes didn't have any positive reviews marked helpful by other users, so their "Most Helpful Positive Review" field was blank, and some recipes had been reviewed less than nine times. So there was more review data available for some recipes than others.
 
-Our goal is to classify reviews according to the kinds of errors they suggest the recipe suffers from.
+### Initial Data Preparation for Unsupervised Learning
 
-## Exploratory Data Analysis
-
-***TK***
-
-## Initial Data Preparation for Unsupervised Learning
-
-During the data collection process, bad URLs were given a `Visited` value of -1 to separate them from good links we had already visited (value: 1) and links we had not yet visited (value: 0). Some of these bad links were added to the records erroneously, so we identify and remove them. 
+During the data collection process, bad URLs were given a `Visited` value of -1 to separate them from good links we had already visited (value: 1) and links we had not yet visited (value: 0). Some of these bad links were added to the records erroneously, so we identified and removed them. 
 
 ```{r bad_links}
 ar_df <- ar_df |>
@@ -74,7 +129,7 @@ rm(links_df)
 
 ```
 
-We also intended to exclude any recipes that had never been reviewed from the data collection process, but a small number of them did make their way into the records, so we remove those as well. 
+We also intended to exclude any recipes that had never been reviewed from the data collection process, but a small number of them did make their way into the records, so we removed those as well. 
 
 ```{r no_reviews}
 ar_df <- ar_df |>
@@ -82,11 +137,9 @@ ar_df <- ar_df |>
 
 ```
 
-While some positive reviews may identify problems with a recipe, it is reasonable to assume that negative reviews are more likely to do so. So we first create a corpus of potentially negative review text. This will make manually labeling reviews by what problem they are identifying faster later by hopefully limiting the number of reviews we will have to look at that don't identify any problems at all. We define a potentially negative review as any text review combined with a star rating of 3 or less.
+We created a corpus of potentially negative reviews by pivoting our wide review data into a longer format, dropping many columns we didn't need for our analysis, and removing any reviews with star ratings of 4 or higher from the 134,800 total reviews we gathered. We hoped this would make manually labeling reviews by what problem they were identifying faster by limiting the number of reviews we would have to look at that didn't identify any problems at all. That left us with 14,954 potentially negative reviews.
 
-We pivot our wide review data into a longer format, dropping some columns we don't need for this stage of the analysis. 
-
-```{r pivot_long}
+```{r pivot_long_remove_4_stars_plus}
 keep <- c("URL", "Recipe_Name", "Ratings_Total", "Ratings_Avg", "Reviews_Total")
 user_sub <- ar_df |>
     select(c(all_of(keep), starts_with("User_"))) |>
@@ -120,27 +173,14 @@ ar_df_long <- user_sub |>
     left_join(txt_len_sub, by = join_by(URL, Review_Num)) |>
     left_join(helpful_sub, by = join_by(URL, Review_Num)) |>
     filter(!is.na(Rating))
-print(nrow(ar_df_long))
-
-```
-
-This leaves us with 134,800 text reviews. We remove any reviews with star ratings of 4 or higher.
-
-```{r }
 ar_df_long_neg <- ar_df_long |>
     filter(Rating < 4)
-nrows <- nrow(ar_df_long_neg)
-print(nrows)
 
 ```
 
-That leaves us with 14,954 potentially negative reviews.
+We created a featureset using only bigrams for these 14,954 potentially negative reviews. Bigrams provide more context than unigrams, and bigrams that contained words that are commonly considered stopwords for text data were useful for our analysis. Many reviews included text like "too much" or "not enough," both of which could indicate `MEASUREMENTS` errors, and we hoped LDA would group reviews together based on similar informative language like this. So we did not exclude bigrams that contained words like "too" and "not" from consideration. We did eliminate bigrams containing non-useful stopwords (e.g. pronouns), as well as bigrams containing numbers, but we noticed later that our number-identification method unintentionally left bigrams containing fractions in. 
 
-## Unsupervised Learning: Topic Modeling
-
-We start by fuzzy clustering the reviews into topics using bigrams. We chose bigrams because they include more context than unigrams, and some words that are commonly considered stopwords for text data might actually be useful for our analysis. So we do not exclude bigrams that contain words like "too" and "not" from consideration. Many reviews include text like "too much" or "not enough," both of which could indicate measurement errors, and we hope fuzzy clustering will group reviews together based on similar informative language like this. We do eliminate bigrams containing non-useful stopwords (e.g. pronouns), as well as bigrams containing numbers. (We noticed later that our method unintentionally left bigrams containing fractions in.)
-
-```{r warning = FALSE, message = FALSE}
+```{r lda_prep, warning = FALSE, message = FALSE}
 stop_w <- as.data.frame(stopwords(language = "en", source = "nltk"))
 colnames(stop_w) <- c("WORD")
 excl <- c("do", "does", "did", "doing", "during", "before", "after", "up",
@@ -176,9 +216,11 @@ ar_df_long_neg_bigrams_dtm <- ar_df_long_neg_bigrams |>
 
 ```
 
-Using values of k from two to 12, we measure the perplexity of several different Latent Dirichlet Allocation (LDA) models that would automatically divide the data into k topics. We plot the perplexity measures against the number of topics.
+### Unsupervised Learning: Topic Modeling via LDA
 
-```{r }
+Using values of k from two to 12, we measured the perplexity of several different LDA models that would automatically partition the data into k topics. The below plot demonstrates how the perplexity for a model tends to decrease as k increases, but after a certain point, the reduction in perplexity achieved by increasing k begins to drop off. 
+
+```{r lda_perplexity}
 get_perplexity <- function(dtm, k_max){
     #function adapted from https://bit.ly/4cLUHO8
     m <- matrix(,1,1)
@@ -210,9 +252,9 @@ p0
 
 ```
 
-We see that the reduction in perplexity begins to drop off after about six topics, so we set k to six in the final LDA model. We plot the bigrams that are most frequent in the six identified topics. 
+In our case, the reduction in LDA model perplexity began to drop off after about six topics, so we set k to six in our final LDA model. The bigrams that were most frequent in the six identified topics were:
 
-```{r }
+```{r lda_model_and_results}
 fn <- "ar_lda.rds"
 if (!file.exists(fn)){
     ar_lda <- LDA(ar_df_long_neg_bigrams_dtm, k = 6, control = list(seed = 208))
@@ -237,11 +279,11 @@ p1
 
 ```
 
-We see a lot of commonality in the bigrams that are frequent within these six topics. For instance, "next time" is the first or second most identifying bigram in four out of six topics, indicating the reviews in each of these topics are likely to exhibit some disappointment in the results and some suggestions for improving those results in the future. Despite all the overlap, there are also bigrams that are unique to the top identifiers for each topic though.
+There was a lot of commonality in the bigrams that were frequent within these six topics. For instance, "next time" was the first or second most identifying bigram in four out of six topics, indicating the reviews in each of those topics were likely to exhibit some disappointment and make some suggestions for improvement. The bigrams "too much" and "way too" were the first and second most identifying topics for topic six, so it seemed likely from this plot that `MEASUREMENTS` errors might define this topic. However, we were also able to find these bigrams somewhere in the identifying bigrams list for every single other topic, so we did not expect `MEASUREMENTS` errors to be exclusive to topic six. 
 
-It's notable that some of these unique bigrams are related to specific ingredients, i.e. brown sugar being an identifier of topic one, cream cheese being an identifier of topics two and four, and soy sauce being an identifier of topic six. Ingredients have therefore resulted in some unintended grouping. We check for an additional instance of unintended grouping since the reviews are of various lengths, and it is reasonable to suspect review length might have incidentally factored into the topic decision boundaries as well. 
+Despite all the overlap, there were some bigrams that were unique to the top identifiers for each topic. It was notable that some of these unique bigrams were related to specific ingredients though, i.e. brown sugar being an identifier of topic one, cream cheese being an identifier of topics two and four, and soy sauce being an identifier of topic six. Ingredients therefore resulted in some unintended grouping. We suspected review length might have unintentionally factored into the grouping as well, so we plotted the distribution of review length by topic to confirm whether or not that was the case:
 
-```{r }
+```{r lda_review_length_by_topic}
 ar_gamma <- tidy(ar_lda, matrix = "gamma")
 names <- c("URL", "Review_Num")
 ar_classifications <- ar_gamma |>
@@ -278,13 +320,13 @@ p2
 
 ```
 
-The topics actually have pretty similar review length distributions. Topic 4 has the highest median review length at 201 characters, but that is only 22 more characters than the lowest median review length (179 characters, shared by topics three and six).
+The topics actually had pretty similar review length distributions. Topic 4 had the highest median review length at 201 characters, but that was only 22 more characters than the lowest median review length (179 characters, shared by topics three and six). So review length did not adversely affect topic modeling.
 
-## Data Labeling
+### Data Labeling for Supervised Learning
 
-We export the potentially negative reviews for manual labeling, then load said labeled data. 
+We exported the potentially negative reviews, manually labeled a manageable portion of them, then loaded said newly labeled data for further data preparation and the application of supervised learning techniques.
 
-```{r }
+```{r data_labels_export_import}
 fn <- "data/allrecipes_df_neg_labs.csv"
 if (!file.exists(fn)){
     ar_df_long_neg_labs <- ar_df_long_neg |>
@@ -298,11 +340,10 @@ ar_df_long_neg_labs <- ar_df_long_neg_labs |>
     mutate(topic = ifelse(is.na(topic), 0, topic),
            gamma = ifelse(is.na(gamma), 0, gamma)) |>
     na.omit()
-print(nrow(ar_df_long_neg_labs))
 
 ```
 
-There are now 3,398 labeled observations in total: 515 observations from each of the six topics identified during LDA, plus 308 observations that were not composed of any significant bigrams and were thus assigned a topic of `NA`. (We have recoded `NA` topic values as 0.) Reasons why a review might not be composed of any significant bigrams include:
+There were 3,398 labeled observations in total: 515 observations from each of the six topics identified during LDA, plus 308 observations that were not composed of any significant bigrams and were thus assigned a topic of `NA`. (We recoded `NA` topic values as 0.) Reasons why a review might not have been composed of any significant bigrams included:
 
 * the review was devoid of any words (e.g. "!!!" )
 
@@ -310,15 +351,17 @@ There are now 3,398 labeled observations in total: 515 observations from each of
 
 * all possible bigrams in the review contained stopwords (e.g. "I hated it")
 
-The observations have been labeled in two ways:
+The observations were labeled in two ways:
 
 1) as either "Neutral" or "Negative" in `SENTIMENT`
 
-2) by which of nine specific problems they identify (if any): `DIRECTIONS`, `MEASUREMENTS`, `TIMING`, `TEMPERATURE`, `ING_KEY_MISSING`, `ING_FLAVOR_MISSING`, `ING_WRONG_INCL`, `INAUTHENTIC`, and `USER_ERROR`
+2) by which of nine* specific problems they identified (if any): `DIRECTIONS`, `MEASUREMENTS`, `TIMING`, `TEMPERATURE`, `ING_KEY_MISSING`, `ING_FLAVOR_MISSING`, `ING_WRONG_INCL`, `INAUTHENTIC`, and `USER_ERROR`
 
-These nine specific problems and descriptions of the criteria used to define whether a review identified them are outlined below:
+*Note that these nine problems were later reduced to the seven problems mentioned previously by combining the three ingredient-related problems (`ING_KEY_MISSING`, `ING_FLAVOR_MISSING`, and `ING_WRONG_INCL`) into a single problem (`INGREDIENTS`).
 
-```{r }
+Descriptions of the problems and the criteria we used to define whether a review identified them are outlined below:
+
+```{r prob_desc2}
 prob <- c("DIRECTIONS", "MEASUREMENTS", "TIMING", "TEMPERATURE", "ING_KEY_MISSING", "ING_FLAVOR_MISSING", "ING_WRONG_INCL", "INAUTHENTIC", "USER_ERROR")
 desc <- c("One or more steps was unclear, incorrect, or missing",
           "Included too much or too little of one or more ingredients",
@@ -335,18 +378,18 @@ kable(tbl, format = "simple")
 
 ```
 
-Because we only looked at reviews with star ratings of 3 or less, we originally felt it should not be possible for these reviews to receive a "Positive" label for `SENTIMENT`. However, we did encounter review text along the way that was clearly neither "Negative" nor "Neutral," and it's possible the reviewer intended to leave a higher star rating along with their seemingly "Positive" words. For the sake of consistency, we continued to categorize these "Positive" reviews as "Neutral" during labeling so that we could redefine our `SENTIMENT` variable later and hopefully eliminate any confusion. To that end, we now replace the `SENTIMENT` variable with the `NEGATIVE` variable, a binary predictor in which a value of 1 indicates the review text expressed a "Negative" sentiment, and a value of 0 simply indicates it did not. 
+Because we only looked at reviews with star ratings of three or below, we originally felt it should not be possible for these reviews to receive a "Positive" label for `SENTIMENT`. However, we did encounter review text along the way that was clearly neither "Negative" nor "Neutral," and it's possible the reviewer intended to leave a higher star rating along with their seemingly "Positive" words. For the sake of consistency, we continued to categorize these "Positive" reviews as "Neutral" during labeling so that we could redefine our `SENTIMENT` variable later and hopefully eliminate any confusion. To that end, we replaced the `SENTIMENT` variable with the `NEGATIVE` variable, a binary predictor in which a value of 1 indicates the review text expressed a "Negative" sentiment, and a value of 0 simply indicates it did not. 
 
-```{r }
+```{r replace_sent_var}
 ar_df_long_neg_labs <- ar_df_long_neg_labs |>
     rename(NEGATIVE = SENTIMENT) |>
     mutate(NEGATIVE = ifelse(NEGATIVE == "Negative", 1, 0))
 
 ```
 
-We visualize the frequency of "Negative" reviews by star rating.
+By visualizing the frequency of "Negative" reviews by star rating below, we confirm that the lower the star rating was, the more "Negative" the sentiment of the review text tended to be, as expected:
 
-```{r }
+```{r plot_neg_sent_by_star}
 sel <- c("Negative", "Other")
 sent_star_summ_df <- ar_df_long_neg_labs |>
     filter(Rating > 0) |>
@@ -385,11 +428,11 @@ p3
 
 ```
 
-In line with our expectations, most of the 1- and 2-star reviews we labeled expressed "Negative" sentiment, whereas most of the 3-star reviews we expressed did not. We also encountered more than twice as many 3-star reviews as we did 1- or 2-star reviews during labeling, but 1- and 2-star reviews are similar enough categories that we can justifiably aggregate them. When we consider them in aggregate, the number of 1- and 2-star reviews we labeled is similar to the number of 3-star reviews we labeled.
+Almost all of the 1- and 2-star reviews we labeled expressed "Negative" sentiment, whereas a much smaller percentage of the 3-star reviews we labeled did. We also encountered more than twice as many 3-star reviews as we did 1- or 2-star reviews during labeling, but 1- and 2-star reviews are similar enough categories that we could justifiably aggregate them. When we considered them in aggregate, the number of 1- and 2-star reviews we labeled was similar to the number of 3-star reviews we labeled.
 
-We now visualize the frequency and some of the overlap of the nine specific problems we identified. 
+We visualized the problems we identified in terms of both frequency and overlap since the problems were non-exclusive. 
 
-```{r }
+```{r plot_problem_freq_overlap}
 p4 <- ar_df_long_neg_labs |>
     upset(sets = prob, group.by = "sets", cutoff = 4,
           matrix.color = pal[10], main.bar.color = pal[10],
@@ -398,11 +441,11 @@ p4
 
 ```
 
-Reviews that identify `MEASUREMENTS` errors are most frequent, whereas reviews that identify `TEMPERATURE` errors are least frequent. When reviews mention two problems, `MEASUREMENTS` is frequently one of them. It is also worth noting that some of the problems frequently occur together, as well as with authenticity problems. Lastly, `TEMPERATURE` errors occur frequently with `TIMING` errors, which is sensible because timing issues can often be solved with temperature changes, and vice versa.
+Reviews that identified `MEASUREMENTS` errors were most frequent, whereas reviews that identified `TEMPERATURE` errors were least frequent. When reviews mentioned two problems, `MEASUREMENTS` was frequently one of them. It is also worth noting that some of the ingredient-related issues frequently occurred together, as well as with authenticity issues. Lastly, `TEMPERATURE` errors occurred frequently with `TIMING` errors, which is sensible because in cooking, timing issues can often be solved with temperature changes, and vice versa.
 
-We visualize the distribution of problems by topic.
+Despite the fact that the primary goal of LDA was pre-sorting the reviews so that manually labeling them by problem would hopefully be faster and simpler, we don't believe there was actually much reduction in the time or effort it cost us to label the data. We visualized the distribution of problems by topic to demonstrate why:
 
-```{r }
+```{r plot_problem_by_topic}
 sel <- c("topic", prob)
 prob_by_top <- ar_df_long_neg_labs |>
     select(all_of(sel)) |>
@@ -421,13 +464,13 @@ p5
 
 ```
 
-While there are some visible differences in the exact frequencies of problems by topic, it is clear that LDA did not segment the topics by the problems, or there would be topics where particular problems are relatively absent and others are relatively dominant. This is not terribly surprising since the problems are non-exclusive, and we only did a moderate amount of data preparation prior to trying to identify the topics before we did manual labeling. 
+While there were some visible differences in the exact frequencies of problems by topic, it is clear that LDA did not segment the topics by the problems, or there would have been topics where particular problems were relatively absent and others were relatively dominant. We had suspected topic six might be defined more by `MEASUREMENTS` problems than the other topics because its most identifying bigrams were "too much" and "way too," but topic three actually had the most `MEASUREMENTS` problems, and every topic had more `MEASUREMENTS` problems than any other class of problem.
 
-Since we anticipated unsupervised learning would be insufficient for our problem classification needs, and we primarily used it in hopes of speeding the manual labeling process along, we now proceed with preparing the labeled data further for supervised learning.
+It's not terribly surprising that LDA failed to segment the topics by the problems we wanted to identify. These problems are non-exclusive, so there has to be some overlap, and we only did a moderate amount of data preparation prior to LDA before manually labeling the data. 
 
-## Secondary Data Preparation for Supervised Learning
+### Secondary Data Preparation for Supervised Learning
 
-First, we collapse the three ingredient-related problems into a single problem. While the specificity with which we originally labeled the data regarding ingredient issues might be helpful for other analyses, ours will benefit from being slightly less complex. 
+Since we anticipated unsupervised learning would be insufficient for our problem classification needs, we proceeded with preparing the labeled data further for supervised learning as planned. First, we collapsed the three ingredient-related problems into a single problem. While the specificity with which we originally labeled the data regarding ingredient issues might be helpful for other analyses, ours benefited from being slightly less complex. 
 
 ```{r }
 ing <- c("ING_KEY_MISSING", "ING_FLAVOR_MISSING", "ING_WRONG_INCL")
@@ -439,9 +482,9 @@ ar_df_long_neg_labs <- ar_df_long_neg_labs |>
 
 ```
 
-The `INGREDIENTS` response variable now takes the place of the `ING_KEY_MISSING`, `ING_FLAVOR_MISSING`, and `ING_WRONG_INCL` response variables. A value of 1 for the new variable indicates there was at least one ingredient issue, whereas a value of 0 indicates there were no ingredient issues. We reprint the problems/criteria table to reflect this change.
+The `INGREDIENTS` response variable took the place of the `ING_KEY_MISSING`, `ING_FLAVOR_MISSING`, and `ING_WRONG_INCL` response variables. A value of 1 for the new variable indicates there was at least one ingredient issue, whereas a value of 0 indicates there were no ingredient issues. For the sake of clarity, the problems/criteria table has been reprinted below to reflect this change:
 
-```{r }
+```{r prob_desc3}
 prob <- c("DIRECTIONS", "MEASUREMENTS", "TIMING", "TEMPERATURE",
           "INGREDIENTS", "INAUTHENTIC", "USER_ERROR")
 desc <- c("One or more steps was unclear, incorrect, or missing",
@@ -453,15 +496,16 @@ desc <- c("One or more steps was unclear, incorrect, or missing",
           "Reviewer suspected/admitted they made a mistake")
 tbl <- cbind(prob, desc)
 colnames(tbl) <- c("PROBLEM", "DESCRIPTION")
-kable(tbl, format = "simple")
 
 ```
 
-Next, we refine the text pre-processing and tokenization that was done prior to LDA topic modeling. 
+Then we refined the text pre-processing and tokenization that was done prior to LDA topic modeling. First, we did simple things like converting all text to lowercase and removing any punctuation marks except for apostrophes (after replacing right single quotation marks used as such). Then, we undertook more complex transformations.
 
-First, we replace any ingredients a review mentions with a single token: "__ING__." We will be better able to group similar language together this way because we want to know how frequently a review discusses ingredients and the contexts in which ingredients are being discussed, but it doesn't matter which ingredient a reviewer is saying there is "too much" of for our purposes. The ingredients list we are using to perform this reduction in complexity is neither perfect nor exhaustive, but it covers enough common ingredients to be useful.
+First, we replaced any ingredients a review mentioned (i.e. "chicken," "flour," or "pepper") with a single token: "__ING__." We hoped we would be better able to group similar language together this way because we wanted to know how frequently a review discussed ingredients and the contexts in which ingredients were being discussed, but it didn't really matter which ingredient a reviewer was talking about for our purposes. What mattered, as just one example, was whether the reviewer was saying there was "too much" or "not enough" of said ingredient. The ingredients list we used to reduce ingredient words to a single token was neither perfect nor exhaustive, but it did cover enough common ingredients to be useful.
 
-We also replace any numbers (including integers, fractions, mixed fractions, and decimals) with a single token: "__NUM__," we remove any punctuation marks except for apostrophes (after replacing right single quotation marks used as such), and we convert everything to lowercase. 
+For similar reasons, we replaced any measurement words and their common abbreviations (i.e. "tablespoons" or "tbsp") with a single token: "__MEAS__."
+
+We also replaced any numbers (including integers, fractions, mixed fractions, and decimals) with a single token: "__NUM__."
 
 ```{r }
 my_url1 <- "https://raw.githubusercontent.com/geedoubledee/data698_research_project/main/data/recipe_ing_train.json"
@@ -523,7 +567,7 @@ ar_df_long_neg_ING <- ar_df_long_neg |>
 
 ```
 
-We tokenize the refined text into unigrams, bigrams, and trigrams.
+We tokenized the refined text into four featuresets: one containing only unigrams, one containing only bigrams, only containing only trigrams, and one containing a combination of all three. Each featureset was represented as a sparse matrix, which we split into train, validate, and test sets. 
 
 ```{r }
 keep <- c("URL", "Review_Num", "Review_Txt")
@@ -654,7 +698,9 @@ test_y_num <- validate_test_y_num[-sample, ]
 
 ```
 
-## Model Development
+### Supervised Learning: Model Development
+
+We generated four kinds of supervised learning models: Naive Bayes, SVM, eXtreme Gradient Boosting, and Logistic Regression. Each type of model was trained on each featureset, and there were seven versions of each kind of model per featureset (one for each non-exclusive problem class). For all SVM models, a linear kernel was used. 
 
 ```{r warning = FALSE, message = FALSE}
 fol <- c("models/")
@@ -756,7 +802,9 @@ for (i in 1:length(dat)){
 
 ```
 
-## Model Validation
+### Supervised Learning: Model Validation
+
+
 
 ```{r }
 nb_preds <- list()
@@ -926,7 +974,9 @@ kable(metrics, format = "simple")
 
 ```
 
-## Model Adjustment
+### Supervised Learning: Model Adjustment
+
+
 
 ```{r }
 fn <- "data/high_corr.csv"
@@ -974,7 +1024,7 @@ for (i in 1:length(copy)){
 
 ```
 
-```{r retrain, warning = FALSE, message = FALSE, echo = FALSE}
+```{r retrain, warning = FALSE, message = FALSE}
 fol <- c("models2/")
 dat <- c("uni_", "bi_", "tri_", "all_")
 fns <- c("nb1.rds", "nb2.rds", "nb3.rds", "nb4.rds", "nb5.rds", "nb6.rds",
@@ -1062,7 +1112,7 @@ for (i in 1:length(dat)){
 
 ```
 
-```{r new_validate_preds, echo = FALSE}
+```{r new_validate_preds}
 nb_preds <- list()
 nb_cms_complete <- list()
 nb_cms <- list()
@@ -1230,9 +1280,9 @@ kable(metrics, format = "simple")
 
 ```
 
-## Model Evaluation
+### Supervised Learning: Model Evaluation
 
-```{r test_preds, echo = FALSE}
+```{r test_preds}
 nb_preds <- list()
 nb_cms_complete <- list()
 nb_cms <- list()
@@ -1469,7 +1519,7 @@ kable(metrics, format = "simple")
 
 ```
 
-```{r echo = FALSE}
+```{r }
 # p6
 # p7
 # p8
@@ -1477,6 +1527,20 @@ kable(metrics, format = "simple")
 
 ```
 
+## Conclusions & Future Work
 
 
-## Conclusion
+
+## Bibliography
+
+
+
+## Video Presentation
+
+
+
+## Appendix with Code
+
+```{r show-code, ref.label = all_labels(), echo = TRUE, eval = FALSE}
+
+```
