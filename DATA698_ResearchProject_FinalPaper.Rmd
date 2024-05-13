@@ -3,6 +3,8 @@ title: "Classification of Recipe Review Text According to Problems Identified by
 author: "Glen Dale Davis"
 date: "2024-03-16"
 output: html_document
+bibliography: references.bib
+csl: apa-no-initials.csl
 ---
 
 ```{r setup, include=FALSE}
@@ -80,7 +82,23 @@ To answer this question, we utilized a combination of unsupervised and supervise
 
 ## Literature Review
 
-Our literature review focused on: unsupervised learning techniques for reducing the amount of time and labor supervised learning techniques would require; comparisons of several supervised learning techniques for natural language processing; choices of ngram tokenization; metrics for assessing classifier performance when classes are both imbalanced and non-exclusive; and special considerations when working with sparse matrices.
+The classification of text, including review text and even more specifically recipe review text, has been previously analyzed from many perspectives. Our literature review focused on: 1) **unsupervised learning** techniques that might reduce the amount of time spent manually labeling the review text for supervised learning, as well as the pros and cons of some forms of text pre-processing prior to unsupervised learning; 2) comparisons of several **supervised learning** techniques commonly used in Natural Language Processing (NLP), as well as their applications when classes are greater than two and non-exclusive; 3) developing featuresets from **ngrams of different lengths**; and 4) **performance metrics** for assessing text classifiers when the labeled classes are imbalanced
+
+**Unsupervised Learning: ** When reviewing unsupervised learning techniques that can be applied to NLP, we decided early on that we would not consider fuzzy clustering via artificial neural networks like the ones described in @derhgawen2020efficient due to computation costs. We also rejected semantic orientation as described in @chaovalit2005movie, as it can only be used in binary classification tasks like simple sentiment analysis.
+
+Instead, we looked at other methods. Both @sutherland2020topic and @schofield2016comparing have used topic modeling via LDA, a common unsupervised learning technique in NLP, to effectively classify text into coherent groups automatically. Using LDA, @sutherland2020topic were able to identify, then validate 14 distinct topics (value, amenities, etc.) of customer satisfaction in reviews guests left for various accommodations (hotels, etc.). So it seemed promising that we might be able to achieve similar success employing LDA in our analysis to automatically categorize reviews prior to manually labeling them. However, these articles took different approaches to stemming, a popular text pre-processing method used to simplify the vocabulary of a text corpus by essentially combining words with the same beginnings but different endings into one root word. @sutherland2020topic found stemming to be a key part of their topic modeling success, while @schofield2016comparing found that this method did not improve their topic modeling, no matter what number of coherent groups they tried to identify in their corpora or how little stemming they did. All stemming methods, even light ones, reduced performance. So the question, "To stem, or not to stem?" remained for us.
+
+**Supervised Learning: ** Having settled on LDA as our unsupervised learning technique, whether it made manually labeling our reviews any faster or not, we considered a wide variety of supervised learning techniques commonly used in NLP. We settled on: 1) Naive Bayes models, used by @lohar2017adapt, @pranckevivcius2017comparison, @zhang2003question, and @madushani2021fine; 2) SVM models, used by @al2018random, @pranckevivcius2017comparison, and @zhang2003question; 3) Logistic Regression models, used by @pranckevivcius2017comparison; and 4) eXtreme Gradient Boosting models. Both @al2018random and @pranckevivcius2017comparison used Random Forest models, but we knew from previous experience those models would not be able to handle the sparse matrices we would need to use to represent our ngram featuresets. So we chose eXtreme Gradient Boosting models, which can handle sparse matrices, instead.
+
+@lohar2017adapt successfully used Naive Bayes models to classify Microsoft Office customer feedback into six categories (bug, complaint, etc.). While the categories were non-exclusive like those in our analysis, there was not as much overlap in these categories as there was in the problems we wanted to identify in recipe review text. So their best performing model was a one-versus-rest classifier, whereas we needed separate classifiers for each problem we wanted to identify.
+
+Unlike @lohar2017adapt, @pranckevivcius2017comparison compared the results of many kinds of models, not just Naive Bayes ones. They found that Logistic Regression models performed better than Naive Bayes models, Random Forest Models, Decision Tree models, and SVM models at a multi-class classification task using Amazon product review text to predict star-rating (1-5). However, Logistic Regression models predicted some classes much better than others, unlike the rest of the models compared in this analysis, which were more stable. (Note that the only kernel function they were able to use for their SVM models was the linear kernel, as other kernel functions were not yet implemented in the Apache Spark machine learning library they used for their analysis.)
+
+Like @pranckevivcius2017comparison, @zhang2003question compared the results of many kinds of models. They found that SVM models using a linear kernel performed better than Nearest Neighbors models, Naive Bayes models, Decision Tree models, and Sparse Network of Winnows models at a multi-class classification task using question text to predict the kind of question being asked. They also found there was no performance difference between linear SVM models and SVM models using radial basis, polynomial, or sigmoid kernels.
+
+**Ngrams of Different Lengths: ** In addition to wanting to test a variety of models, we also wanted to test a variety of featuresets based on ngrams of different lengths. Using only Naive Bayes models, @madushani2021fine found that the models always performed better as the length of the ngrams used to train them increased. That is, bigrams alone produced better models than unigrams alone, and trigrams alone produced better models than bigrams alone. However, when comparing performance across a variety of models, @pranckevivcius2017comparison found that unigrams alone were sufficient. Bigrams alone didn't perform better than unigrams alone, and neither did trigrams alone. All three combined did not improve performance either. 
+
+**Performance Metrics: ** @jurafsky2024speech stresses the importance of precision, recall, and F scores in measuring text classifier performance when the classes are imbalanced like the recipe problems we wanted to identify in the review text. @lohar2017adapt found unsurprisingly that when predicting multiple non-exclusive classes, it is the classes that are the best represented in the data that are easiest for models to predict. While they only examined Naive Bayes models in their analysis, we found the same to be true regardless of the type of model used in our analysis. 
 
 ## Methodology
 
@@ -1533,7 +1551,7 @@ kable(metrics, format = "simple")
 
 ## Bibliography
 
-
+<div id="refs"></div>
 
 ## Video Presentation
 

@@ -253,6 +253,29 @@ if (window.hljs) {
 
 
 
+<style type="text/css">
+
+div.csl-bib-body { }
+div.csl-entry {
+clear: both;
+margin-bottom: 0em;
+}
+.hanging div.csl-entry {
+margin-left:2em;
+text-indent:-2em;
+}
+div.csl-left-margin {
+min-width:2em;
+float:left;
+}
+div.csl-right-inline {
+margin-left:2em;
+padding-left:1em;
+}
+div.csl-indent {
+margin-left: 2em;
+}
+</style>
 
 
 
@@ -502,13 +525,112 @@ featureset (one for each non-exclusive problem class).</p>
 </div>
 <div id="literature-review" class="section level2">
 <h2>Literature Review</h2>
-<p>Our literature review focused on: unsupervised learning techniques
-for reducing the amount of time and labor supervised learning techniques
-would require; comparisons of several supervised learning techniques for
-natural language processing; choices of ngram tokenization; metrics for
-assessing classifier performance when classes are both imbalanced and
-non-exclusive; and special considerations when working with sparse
-matrices.</p>
+<p>The classification of text, including review text and even more
+specifically recipe review text, has been previously analyzed from many
+perspectives. Our literature review focused on: 1) <strong>unsupervised
+learning</strong> techniques that might reduce the amount of time spent
+manually labeling the review text for supervised learning, as well as
+the pros and cons of some forms of text pre-processing prior to
+unsupervised learning; 2) comparisons of several <strong>supervised
+learning</strong> techniques commonly used in Natural Language
+Processing (NLP), as well as their applications when classes are greater
+than two and non-exclusive; 3) developing featuresets from
+<strong>ngrams of different lengths</strong>; and 4) <strong>performance
+metrics</strong> for assessing text classifiers when the labeled classes
+are imbalanced</p>
+<p><strong>Unsupervised Learning: </strong> When reviewing unsupervised
+learning techniques that can be applied to NLP, we decided early on that
+we would not consider fuzzy clustering via artificial neural networks
+like the ones described in <span class="citation">Derhgawen et al.
+(2020)</span> due to computation costs. We also rejected semantic
+orientation as described in <span class="citation">Chaovalit &amp; Zhou
+(2005)</span>, as it can only be used in binary classification tasks
+like simple sentiment analysis.</p>
+<p>Instead, we looked at other methods. Both <span class="citation">Sutherland et al. (2020)</span> and <span class="citation">Schofield &amp; Mimno (2016)</span> have used topic
+modeling via LDA, a common unsupervised learning technique in NLP, to
+effectively classify text into coherent groups automatically. Using LDA,
+<span class="citation">Sutherland et al. (2020)</span> were able to
+identify, then validate 14 distinct topics (value, amenities, etc.) of
+customer satisfaction in reviews guests left for various accommodations
+(hotels, etc.). So it seemed promising that we might be able to achieve
+similar success employing LDA in our analysis to automatically
+categorize reviews prior to manually labeling them. However, these
+articles took different approaches to stemming, a popular text
+pre-processing method used to simplify the vocabulary of a text corpus
+by essentially combining words with the same beginnings but different
+endings into one root word. <span class="citation">Sutherland et al.
+(2020)</span> found stemming to be a key part of their topic modeling
+success, while <span class="citation">Schofield &amp; Mimno
+(2016)</span> found that this method did not improve their topic
+modeling, no matter what number of coherent groups they tried to
+identify in their corpora or how little stemming they did. All stemming
+methods, even light ones, reduced performance. So the question, “To
+stem, or not to stem?” remained for us.</p>
+<p><strong>Supervised Learning: </strong> Having settled on LDA as our
+unsupervised learning technique, whether it made manually labeling our
+reviews any faster or not, we considered a wide variety of supervised
+learning techniques commonly used in NLP. We settled on: 1) Naive Bayes
+models, used by <span class="citation">Lohar et al. (2017)</span>, <span class="citation">Pranckevičius &amp; Marcinkevičius (2017)</span>, <span class="citation">Zhang &amp; Lee (2003)</span>, and <span class="citation">Madushani &amp; Arudchelvam (2021)</span>; 2) SVM
+models, used by <span class="citation">Al Amrani et al. (2018)</span>,
+<span class="citation">Pranckevičius &amp; Marcinkevičius (2017)</span>,
+and <span class="citation">Zhang &amp; Lee (2003)</span>; 3) Logistic
+Regression models, used by <span class="citation">Pranckevičius &amp;
+Marcinkevičius (2017)</span>; and 4) eXtreme Gradient Boosting models.
+Both <span class="citation">Al Amrani et al. (2018)</span> and <span class="citation">Pranckevičius &amp; Marcinkevičius (2017)</span> used
+Random Forest models, but we knew from previous experience those models
+would not be able to handle the sparse matrices we would need to use to
+represent our ngram featuresets. So we chose eXtreme Gradient Boosting
+models, which can handle sparse matrices, instead.</p>
+<p><span class="citation">Lohar et al. (2017)</span> successfully used
+Naive Bayes models to classify Microsoft Office customer feedback into
+six categories (bug, complaint, etc.). While the categories were
+non-exclusive like those in our analysis, there was not as much overlap
+in these categories as there was in the problems we wanted to identify
+in recipe review text. So their best performing model was a
+one-versus-rest classifier, whereas we needed separate classifiers for
+each problem we wanted to identify.</p>
+<p>Unlike <span class="citation">Lohar et al. (2017)</span>, <span class="citation">Pranckevičius &amp; Marcinkevičius (2017)</span>
+compared the results of many kinds of models, not just Naive Bayes ones.
+They found that Logistic Regression models performed better than Naive
+Bayes models, Random Forest Models, Decision Tree models, and SVM models
+at a multi-class classification task using Amazon product review text to
+predict star-rating (1-5). However, Logistic Regression models predicted
+some classes much better than others, unlike the rest of the models
+compared in this analysis, which were more stable. (Note that the only
+kernel function they were able to use for their SVM models was the
+linear kernel, as other kernel functions were not yet implemented in the
+Apache Spark machine learning library they used for their analysis.)</p>
+<p>Like <span class="citation">Pranckevičius &amp; Marcinkevičius
+(2017)</span>, <span class="citation">Zhang &amp; Lee (2003)</span>
+compared the results of many kinds of models. They found that SVM models
+using a linear kernel performed better than Nearest Neighbors models,
+Naive Bayes models, Decision Tree models, and Sparse Network of Winnows
+models at a multi-class classification task using question text to
+predict the kind of question being asked. They also found there was no
+performance difference between linear SVM models and SVM models using
+radial basis, polynomial, or sigmoid kernels.</p>
+<p><strong>Ngrams of Different Lengths: </strong> In addition to wanting
+to test a variety of models, we also wanted to test a variety of
+featuresets based on ngrams of different lengths. Using only Naive Bayes
+models, <span class="citation">Madushani &amp; Arudchelvam (2021)</span>
+found that the models always performed better as the length of the
+ngrams used to train them increased. That is, bigrams alone produced
+better models than unigrams alone, and trigrams alone produced better
+models than bigrams alone. However, when comparing performance across a
+variety of models, <span class="citation">Pranckevičius &amp;
+Marcinkevičius (2017)</span> found that unigrams alone were sufficient.
+Bigrams alone didn’t perform better than unigrams alone, and neither did
+trigrams alone. All three combined did not improve performance
+either.</p>
+<p><strong>Performance Metrics: </strong> <span class="citation">Jurafsky &amp; Martin (2024)</span> stresses the
+importance of precision, recall, and F scores in measuring text
+classifier performance when the classes are imbalanced like the recipe
+problems we wanted to identify in the review text. <span class="citation">Lohar et al. (2017)</span> found unsurprisingly that
+when predicting multiple non-exclusive classes, it is the classes that
+are the best represented in the data that are easiest for models to
+predict. While they only examined Naive Bayes models in their analysis,
+we found the same to be true regardless of the type of model used in our
+analysis.</p>
 </div>
 <div id="methodology" class="section level2">
 <h2>Methodology</h2>
@@ -1061,6 +1183,65 @@ class). For all SVM models, a linear kernel was used.</p>
 </div>
 <div id="bibliography" class="section level2">
 <h2>Bibliography</h2>
+<div id="refs" class="references csl-bib-body hanging-indent" entry-spacing="0" line-spacing="2">
+<div id="ref-al2018random" class="csl-entry">
+Al Amrani, Yassine, Lazaar, Mohamed, &amp; El Kadiri, Kamal Eddine.
+(2018). Random forest and support vector machine based hybrid approach
+to sentiment analysis. <em>Procedia Computer Science</em>, <em>127</em>,
+511–520. <a href="https://doi.org/10.1016/j.procs.2018.01.150">https://doi.org/10.1016/j.procs.2018.01.150</a>
+</div>
+<div id="ref-chaovalit2005movie" class="csl-entry">
+Chaovalit, Pimwadee, &amp; Zhou, Lina. (2005). Movie review mining: A
+comparison between supervised and unsupervised classification
+approaches. <em>Proceedings of the 38th Annual Hawaii International
+Conference on System Sciences</em>, 112c. <a href="http://dx.doi.org/10.1109/HICSS.2005.445">http://dx.doi.org/10.1109/HICSS.2005.445</a>
+</div>
+<div id="ref-derhgawen2020efficient" class="csl-entry">
+Derhgawen, Shubham, Gogineni, Himaja, Chatterjee, Subhasish, &amp; Tak,
+Rajesh. (2020). Efficient comment classification through NLP and fuzzy
+classification. <em>International Journal of Trend in Scientific
+Research and Development</em>, <em>4</em>(3), 1000–1006. <a href="https://www.ijtsrd.com/papers/ijtsrd30758.pdf">https://www.ijtsrd.com/papers/ijtsrd30758.pdf</a>
+</div>
+<div id="ref-jurafsky2024speech" class="csl-entry">
+Jurafsky, Daniel, &amp; Martin, James H. (2024). Naive bayes, text
+classification, and sentiment. In <em>Speech and language
+processing</em> (3rd draft). <a href="https://web.stanford.edu/~jurafsky/slp3/">https://web.stanford.edu/~jurafsky/slp3/</a>
+</div>
+<div id="ref-lohar2017adapt" class="csl-entry">
+Lohar, Pintu, Dutta Chowdhury, Koel, Afli, Haithem, Hasanuzzaman,
+Mohammed, &amp; Way, Andy. (2017). <em>ADAPT at IJCNLP-2017 task 4: A
+multinomial naive bayes classification approach for customer feedback
+analysis task</em>. <a href="https://www.aclweb.org/anthology/I17-4027">https://www.aclweb.org/anthology/I17-4027</a>
+</div>
+<div id="ref-madushani2021fine" class="csl-entry">
+Madushani, PPE, &amp; Arudchelvam, T. (2021). <em>Fine-grained sentiment
+analysis on food recipe reviews</em>. <a href="http://drr.vau.ac.lk/handle/123456789/290">http://drr.vau.ac.lk/handle/123456789/290</a>
+</div>
+<div id="ref-pranckevivcius2017comparison" class="csl-entry">
+Pranckevičius, Tomas, &amp; Marcinkevičius, Virginijus. (2017).
+Comparison of naive bayes, random forest, decision tree, support vector
+machines, and logistic regression classifiers for text reviews
+classification. <em>Baltic Journal of Modern Computing</em>,
+<em>5</em>(2), 221–232. <a href="http://dx.doi.org/10.22364/bjmc.2017.5.2.05">http://dx.doi.org/10.22364/bjmc.2017.5.2.05</a>
+</div>
+<div id="ref-schofield2016comparing" class="csl-entry">
+Schofield, Alexandra, &amp; Mimno, David. (2016). Comparing apples to
+apple: The effects of stemmers on topic models. <em>Transactions of the
+Association for Computational Linguistics</em>, <em>4</em>, 287–300. <a href="https://doi.org/10.1162/tacl_a_00099">https://doi.org/10.1162/tacl_a_00099</a>
+</div>
+<div id="ref-sutherland2020topic" class="csl-entry">
+Sutherland, Ian, Sim, Youngseok, Lee, Seul Ki, Byun, Jaemun, &amp;
+Kiatkawsin, Kiattipoom. (2020). Topic modeling of online accommodation
+reviews via latent dirichlet allocation. <em>Sustainability</em>,
+<em>12</em>(5), 1821. <a href="https://doi.org/10.3390/su12051821">https://doi.org/10.3390/su12051821</a>
+</div>
+<div id="ref-zhang2003question" class="csl-entry">
+Zhang, Dell, &amp; Lee, Wee Sun. (2003). Question classification using
+support vector machines. <em>Proceedings of the 26th Annual
+International ACM SIGIR Conference on Research and Development in
+Informaion Retrieval</em>, 26–32. <a href="https://doi.org/10.1145/860435.860443">https://doi.org/10.1145/860435.860443</a>
+</div>
+</div>
 </div>
 <div id="video-presentation" class="section level2">
 <h2>Video Presentation</h2>
