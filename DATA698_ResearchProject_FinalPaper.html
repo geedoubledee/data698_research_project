@@ -1125,10 +1125,19 @@ and test sets.</p>
 SVM, eXtreme Gradient Boosting, and Logistic Regression. Each type of
 model was trained on each featureset, and there were seven versions of
 each kind of model per featureset (one for each non-exclusive problem
-class). For all SVM models, a linear kernel was used.</p>
+class). For all SVM models, a linear kernel was used. (Using a radial
+basis kernel for the SVM models was also tested, and it was not only
+incredibly slow to build SVM models using a radial basis kernel on this
+training data, but they also performed poorly on all problems, no matter
+which featureset was used to train them. They tended to make no positive
+predictions whatsoever.)</p>
 </div>
 <div id="supervised-learning-model-validation" class="section level3">
 <h3>Supervised Learning: Model Validation</h3>
+<p>We made predictions using the data that was set aside for validation.
+Below are the top performing models by F1 Score for each problem. The
+featuresets the top performers used to achieve their results are also
+listed.</p>
 <table>
 <thead>
 <tr class="header">
@@ -1207,9 +1216,32 @@ class). For all SVM models, a linear kernel was used.</p>
 </tr>
 </tbody>
 </table>
+<p>Performance on most problems was low for all models, no matter which
+featuresets they used, but moderate performance was achieved on two
+problems. The Support Vector Machine model using a combination of
+unigrams, bigrams, and trigrams performed well on the
+<code>MEASUREMENTS</code> problem, achieving an F1 Score of 68.02
+percent, and the Naive Bayes model using the same combination of ngrams
+performed well on the <code>INGREDIENTS</code> problem, achieving an F1
+Score of 69.27 percent.</p>
 </div>
 <div id="supervised-learning-model-adjustment" class="section level3">
 <h3>Supervised Learning: Model Adjustment</h3>
+<p>In hopes of improving performance, we eliminated any features that
+demonstrated a correlation greater than 0.9 (in absolute value) with
+another feature. Due to computation costs, we had to calculate
+correlations one at a time for unigrams, then bigrams, then trigrams.
+Then we eliminated these highly correlated features from any featureset
+they appeared in. It would have been better to consider correlations
+across all ngrams at once. That way, we could have seen whether a
+trigram was highly correlated with a unigram, for instance. But our
+limitations only allowed us to see whether ngrams of the same length
+were highly correlated.</p>
+<p>We made new predictions on the data set aside for validation using
+the reduced featuresets resulting from removing highly correlated ngrams
+of the same length. Below are the top performing models by F1 Score for
+each problem based on the new predictions. The featuresets the top
+performers used to achieve their results are also listed.</p>
 <table>
 <thead>
 <tr class="header">
@@ -1288,9 +1320,23 @@ class). For all SVM models, a linear kernel was used.</p>
 </tr>
 </tbody>
 </table>
+<p>Performance was still low for most problems for all models, no matter
+which featuresets they used. The Support Vector Machine model using a
+combination of unigrams, bigrams, and trigrams still performed well on
+the <code>MEASUREMENTS</code> problem, but its F1 Score decreased
+slightly to 67.45 percent, and the Naive Bayes model using the same
+combination of ngrams still performed well on the
+<code>INGREDIENTS</code> problem, but its F1 Score decreased slightly as
+well (to 69.07 percent).</p>
 </div>
 <div id="supervised-learning-model-evaluation" class="section level3">
 <h3>Supervised Learning: Model Evaluation</h3>
+<p>Even though performance on the data set aside for validation
+decreased for our two best models after we removed highly correlated
+ngrams of the same length from all featuresets, we believed this feature
+reduction might still benefit these models when extrapolating to unseen
+data. So we made final predictions using the reduced featuresets on the
+data set aside for testing.</p>
 <table>
 <thead>
 <tr class="header">
@@ -1369,6 +1415,11 @@ class). For all SVM models, a linear kernel was used.</p>
 </tr>
 </tbody>
 </table>
+<p>Performance increased for the Support Vector Machine model using all
+ngrams on the <code>MEASUREMENTS</code> problems. It achieved a final F1
+Score of 71.74 percent. However, performance for the Naive Bayes model
+decreased, and it used only unigrams instead of all ngrams to achieve a
+final F1 Score of 64.11 percent.</p>
 </div>
 </div>
 <div id="conclusions-future-work" class="section level2">
@@ -2655,78 +2706,7 @@ metrics &lt;- metrics |&gt;
     group_by(Problem) |&gt;
     filter(F1 == max(F1, na.rm = TRUE)) |&gt;
     arrange(Problem, desc(F1))
-kable(metrics, format = &quot;simple&quot;)
-
-# cm &lt;- bind_rows(nb_cms)
-# p6 &lt;- cm |&gt;
-#     ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
-#     geom_tile(col = &quot;black&quot;) +
-#     geom_text(aes(label = Freq), vjust = -1) +
-#     geom_text(aes(label = Label), vjust = 1) + 
-#     scale_fill_gradient(low = &quot;white&quot;, high = pal[9]) +
-#     scale_x_discrete(position = &quot;top&quot;) +
-#     facet_wrap(Model ~ ., ncol = 7, strip.position = &quot;bottom&quot;) +
-#     labs(title = &quot;Confusion Matrices for All Naive Bayes Models&quot;) +
-#     theme(axis.line.x = element_blank(),
-#           axis.line.y = element_blank(),
-#           axis.text.y = element_text(angle = 90, hjust = 0.5),
-#           axis.ticks = element_blank(),
-#           legend.position = &quot;right&quot;,
-#           strip.placement = &quot;outside&quot;)
-# p6
-# cm &lt;- bind_rows(svm_cms)
-# p7 &lt;- cm |&gt;
-#     ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
-#     geom_tile(col = &quot;black&quot;) +
-#     geom_text(aes(label = Freq), vjust = -1) +
-#     geom_text(aes(label = Label), vjust = 1) +
-#     scale_fill_gradient(low = &quot;white&quot;, high = pal[9]) +
-#     scale_x_discrete(position = &quot;top&quot;) +
-#     facet_wrap(Model ~ ., ncol = 4, strip.position = &quot;bottom&quot;) +
-#     labs(title = &quot;Confusion Matrices for All Support Vector Machine Models&quot;) +
-#     theme(axis.line.x = element_blank(),
-#           axis.line.y = element_blank(),
-#           axis.text.y = element_text(angle = 90, hjust = 0.5),
-#           axis.ticks = element_blank(),
-#           legend.position = &quot;right&quot;,
-#           strip.placement = &quot;outside&quot;)
-# cm &lt;- bind_rows(xgb_cms)
-# p8 &lt;- cm |&gt;
-#     ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
-#     geom_tile(col = &quot;black&quot;) +
-#     geom_text(aes(label = Freq), vjust = -1) +
-#     geom_text(aes(label = Label), vjust = 1) + 
-#     scale_fill_gradient(low = &quot;white&quot;, high = pal[9]) +
-#     scale_x_discrete(position = &quot;top&quot;) +
-#     facet_wrap(Model ~ ., ncol = 4, strip.position = &quot;bottom&quot;) +
-#     labs(title = &quot;Confusion Matrices for All eXtreme Gradiant Boosting Models&quot;) +
-#     theme(axis.line.x = element_blank(),
-#           axis.line.y = element_blank(),
-#           axis.text.y = element_text(angle = 90, hjust = 0.5),
-#           axis.ticks = element_blank(),
-#           legend.position = &quot;right&quot;,
-#           strip.placement = &quot;outside&quot;)
-# cm &lt;- bind_rows(logm_cms)
-# p9 &lt;- cm |&gt;
-#     ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
-#     geom_tile(col = &quot;black&quot;) +
-#     geom_text(aes(label = Freq), vjust = -1) +
-#     geom_text(aes(label = Label), vjust = 1) + 
-#     scale_fill_gradient(low = &quot;white&quot;, high = pal[9]) +
-#     scale_x_discrete(position = &quot;top&quot;) +
-#     facet_wrap(Model ~ ., ncol = 4, strip.position = &quot;bottom&quot;) +
-#     labs(title = &quot;Confusion Matrices for All Logistic Regression Models&quot;) +
-#     theme(axis.line.x = element_blank(),
-#           axis.line.y = element_blank(),
-#           axis.text.y = element_text(angle = 90, hjust = 0.5),
-#           axis.ticks = element_blank(),
-#           legend.position = &quot;right&quot;,
-#           strip.placement = &quot;outside&quot;)
-
-# p6
-# p7
-# p8
-# p9</code></pre>
+kable(metrics, format = &quot;simple&quot;)</code></pre>
 </div>
 
 

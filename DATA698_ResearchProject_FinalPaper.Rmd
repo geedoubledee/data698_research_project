@@ -752,7 +752,7 @@ test_y_num <- validate_test_y_num[-sample, ]
 
 ### Supervised Learning: Model Development
 
-We generated four kinds of supervised learning models: Naive Bayes, SVM, eXtreme Gradient Boosting, and Logistic Regression. Each type of model was trained on each featureset, and there were seven versions of each kind of model per featureset (one for each non-exclusive problem class). For all SVM models, a linear kernel was used. 
+We generated four kinds of supervised learning models: Naive Bayes, SVM, eXtreme Gradient Boosting, and Logistic Regression. Each type of model was trained on each featureset, and there were seven versions of each kind of model per featureset (one for each non-exclusive problem class). For all SVM models, a linear kernel was used. (Using a radial basis kernel for the SVM models was also tested, and it was not only incredibly slow to build SVM models using a radial basis kernel on this training data, but they also performed poorly on all problems, no matter which featureset was used to train them. They tended to make no positive predictions whatsoever.) 
 
 ```{r warning = FALSE, message = FALSE}
 fol <- c("models/")
@@ -856,7 +856,7 @@ for (i in 1:length(dat)){
 
 ### Supervised Learning: Model Validation
 
-
+We made predictions using the data that was set aside for validation. Below are the top performing models by F1 Score for each problem. The featuresets the top performers used to achieve their results are also listed. 
 
 ```{r }
 nb_preds <- list()
@@ -1026,9 +1026,11 @@ kable(metrics, format = "simple")
 
 ```
 
+Performance on most problems was low for all models, no matter which featuresets they used, but moderate performance was achieved on two problems. The Support Vector Machine model using a combination of unigrams, bigrams, and trigrams performed well on the `MEASUREMENTS` problem, achieving an F1 Score of 68.02 percent, and the Naive Bayes model using the same combination of ngrams performed well on the `INGREDIENTS` problem, achieving an F1 Score of 69.27 percent.
+
 ### Supervised Learning: Model Adjustment
 
-
+In hopes of improving performance, we eliminated any features that demonstrated a correlation greater than 0.9 (in absolute value) with another feature. Due to computation costs, we had to calculate correlations one at a time for unigrams, then bigrams, then trigrams. Then we eliminated these highly correlated features from any featureset they appeared in. It would have been better to consider correlations across all ngrams at once. That way, we could have seen whether a trigram was highly correlated with a unigram, for instance. But our limitations only allowed us to see whether ngrams of the same length were highly correlated.
 
 ```{r }
 fn <- "data/high_corr.csv"
@@ -1163,6 +1165,8 @@ for (i in 1:length(dat)){
 }
 
 ```
+
+We made new predictions on the data set aside for validation using the reduced featuresets resulting from removing highly correlated ngrams of the same length. Below are the top performing models by F1 Score for each problem based on the new predictions. The featuresets the top performers used to achieve their results are also listed. 
 
 ```{r new_validate_preds}
 nb_preds <- list()
@@ -1332,7 +1336,11 @@ kable(metrics, format = "simple")
 
 ```
 
+Performance was still low for most problems for all models, no matter which featuresets they used. The Support Vector Machine model using a combination of unigrams, bigrams, and trigrams still performed well on the `MEASUREMENTS` problem, but its F1 Score decreased slightly to 67.45 percent, and the Naive Bayes model using the same combination of ngrams still performed well on the `INGREDIENTS` problem, but its F1 Score decreased slightly as well (to 69.07 percent).
+
 ### Supervised Learning: Model Evaluation
+
+Even though performance on the data set aside for validation decreased for our two best models after we removed highly correlated ngrams of the same length from all featuresets, we believed this feature reduction might still benefit these models when extrapolating to unseen data. So we made final predictions using the reduced featuresets on the data set aside for testing.
 
 ```{r test_preds}
 nb_preds <- list()
@@ -1502,82 +1510,7 @@ kable(metrics, format = "simple")
 
 ```
 
-```{r }
-# cm <- bind_rows(nb_cms)
-# p6 <- cm |>
-#     ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
-#     geom_tile(col = "black") +
-#     geom_text(aes(label = Freq), vjust = -1) +
-#     geom_text(aes(label = Label), vjust = 1) + 
-#     scale_fill_gradient(low = "white", high = pal[9]) +
-#     scale_x_discrete(position = "top") +
-#     facet_wrap(Model ~ ., ncol = 7, strip.position = "bottom") +
-#     labs(title = "Confusion Matrices for All Naive Bayes Models") +
-#     theme(axis.line.x = element_blank(),
-#           axis.line.y = element_blank(),
-#           axis.text.y = element_text(angle = 90, hjust = 0.5),
-#           axis.ticks = element_blank(),
-#           legend.position = "right",
-#           strip.placement = "outside")
-# p6
-# cm <- bind_rows(svm_cms)
-# p7 <- cm |>
-#     ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
-#     geom_tile(col = "black") +
-#     geom_text(aes(label = Freq), vjust = -1) +
-#     geom_text(aes(label = Label), vjust = 1) +
-#     scale_fill_gradient(low = "white", high = pal[9]) +
-#     scale_x_discrete(position = "top") +
-#     facet_wrap(Model ~ ., ncol = 4, strip.position = "bottom") +
-#     labs(title = "Confusion Matrices for All Support Vector Machine Models") +
-#     theme(axis.line.x = element_blank(),
-#           axis.line.y = element_blank(),
-#           axis.text.y = element_text(angle = 90, hjust = 0.5),
-#           axis.ticks = element_blank(),
-#           legend.position = "right",
-#           strip.placement = "outside")
-# cm <- bind_rows(xgb_cms)
-# p8 <- cm |>
-#     ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
-#     geom_tile(col = "black") +
-#     geom_text(aes(label = Freq), vjust = -1) +
-#     geom_text(aes(label = Label), vjust = 1) + 
-#     scale_fill_gradient(low = "white", high = pal[9]) +
-#     scale_x_discrete(position = "top") +
-#     facet_wrap(Model ~ ., ncol = 4, strip.position = "bottom") +
-#     labs(title = "Confusion Matrices for All eXtreme Gradiant Boosting Models") +
-#     theme(axis.line.x = element_blank(),
-#           axis.line.y = element_blank(),
-#           axis.text.y = element_text(angle = 90, hjust = 0.5),
-#           axis.ticks = element_blank(),
-#           legend.position = "right",
-#           strip.placement = "outside")
-# cm <- bind_rows(logm_cms)
-# p9 <- cm |>
-#     ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
-#     geom_tile(col = "black") +
-#     geom_text(aes(label = Freq), vjust = -1) +
-#     geom_text(aes(label = Label), vjust = 1) + 
-#     scale_fill_gradient(low = "white", high = pal[9]) +
-#     scale_x_discrete(position = "top") +
-#     facet_wrap(Model ~ ., ncol = 4, strip.position = "bottom") +
-#     labs(title = "Confusion Matrices for All Logistic Regression Models") +
-#     theme(axis.line.x = element_blank(),
-#           axis.line.y = element_blank(),
-#           axis.text.y = element_text(angle = 90, hjust = 0.5),
-#           axis.ticks = element_blank(),
-#           legend.position = "right",
-#           strip.placement = "outside")
-
-```
-
-```{r }
-# p6
-# p7
-# p8
-# p9
-
-```
+Performance increased for the Support Vector Machine model using all ngrams on the `MEASUREMENTS` problems. It achieved a final F1 Score of 71.74 percent. However, performance for the Naive Bayes model decreased, and it used only unigrams instead of all ngrams to achieve a final F1 Score of 64.11 percent. 
 
 ## Conclusions & Future Work
 
