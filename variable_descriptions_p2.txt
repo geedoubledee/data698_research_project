@@ -1,0 +1,7 @@
+VARIABLE	DESCRIPTION
+User_[0-8]	User who left review
+Rating_[0-8]	Star rating for review
+Date_[0-8]	Date of review
+Review_[0-8]	Review number [0-8]
+Review_Len[0-8]	Length in characters of review
+Helpful_[0-8]	Count of users who marked review helpful

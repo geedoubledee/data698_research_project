@@ -1,0 +1,16 @@
+VARIABLE	DESCRIPTION
+URL	Web page address for the recipe
+Recipe_Name	Name of the recipe
+Basic_Info	"List of info such as ‘Prep Time,’ ‘Cook Time,’ ‘Servings,’ etc."
+Ingredients	List of ingredients
+Directions	List of directions
+Nutrition	"List of info such as ‘Calories,’ ‘Fat’, ‘Protein,’ etc."
+Ratings_Total	Total number of star ratings
+Ratings_Avg	Average star rating
+Reviews_Total	Total number of reviews
+MHPR_User	User who left ‘Most Helpful Positive Review’
+MHPR_Rating	Star rating of ‘Most Helpful Positive Review’
+MHPR_Date	Date of ‘Most Helpful Positive Review’
+MHPR_Review	Text of ‘Most Helpful Positive Review’
+MHPR_Review_Len	Length in characters of ‘Most Helpful Positive Review’
+MHPR_Helpful	Count of users who marked ‘Most Helpful Positive Review’ helpful
