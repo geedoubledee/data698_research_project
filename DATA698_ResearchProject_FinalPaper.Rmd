@@ -46,11 +46,11 @@ Only two problems were frequent enough for us to build moderately successful mod
 According to [AllRecipes.com's About Us page](https://www.allrecipes.com/about-us-6648102), "Only the best recipes achieve Kitchen Approved status and get published and promoted" on the Web site. When users submit recipes for "Kitchen Approved" consideration on AllRecipes.com, the Web site's team of recipe editors claims to check the content for "Completion," "Accuracy," and "Replication," among other things. The issues these quality assurance checks are supposed to cover are described below:
 
 ```{r check_desc}
-check <- c("Completion", "Accuracy", "Replication")
-desc <- c("The ingredient list is evaluated to be sure it is complete, that measurements are correct, and that ingredients are properly ordered and grouped according to their use.", "Serving sizes and yields are checked for accuracy and to be sure that recipes reflect USDA dietary recommendations.", "Recipes are reviewed and edited to ensure they are replicable when following the instructions. Editors assess the techniques, equipment, and appliances used in the recipes, and  explain any intermediate or advanced techniques with simple language and visuals.")
-tbl <- cbind(check, desc)
-colnames(tbl) <- c("CHECK", "DESCRIPTION")
-kable(tbl, format = "simple")
+check1 <- c("Completion", "Accuracy", "Replication")
+desc1 <- c("The ingredient list is evaluated to be sure it is complete, that measurements are correct, and that ingredients are properly ordered and grouped according to their use.", "Serving sizes and yields are checked for accuracy and to be sure that recipes reflect USDA dietary recommendations.", "Recipes are reviewed and edited to ensure they are replicable when following the instructions. Editors assess the techniques, equipment, and appliances used in the recipes, and  explain any intermediate or advanced techniques with simple language and visuals.")
+tbl_print <- cbind(check1, desc1)
+colnames(tbl_print) <- c("CHECK", "DESCRIPTION")
+kable(tbl_print, format = "simple")
 
 ```
 
@@ -61,16 +61,16 @@ We have identified seven distinct, but non-exclusive problems that users might c
 ```{r prob_desc1}
 prob <- c("DIRECTIONS", "MEASUREMENTS", "TIMING", "TEMPERATURE",
           "INGREDIENTS", "INAUTHENTIC", "USER_ERROR")
-desc <- c("One or more steps was unclear, incorrect, or missing",
+desc2 <- c("One or more steps was unclear, incorrect, or missing",
           "Included too much or too little of one or more ingredients",
           "Needed more/less time to prep or to finish cooking",
           "Needed higher/lower temperature to cook or assemble correctly",
           "Missing a key/flavor ingredient or included an incorrect ingredient",
           "Lacked a resemblance to the dish's traditional preparation/flavor",
           "Reviewer suspected/admitted they made a mistake")
-tbl <- cbind(prob, desc)
-colnames(tbl) <- c("PROBLEM", "DESCRIPTION")
-kable(tbl, format = "simple")
+tbl_print <- cbind(prob, desc2)
+colnames(tbl_print) <- c("PROBLEM", "DESCRIPTION")
+kable(tbl_print, format = "simple")
 
 ```
 
@@ -114,6 +114,8 @@ Finally, we attempted to improve performance for all models by removing highly c
 
 ## Experimentation & Results
 
+The data we gathered included several fields. Names and descriptions of the first 15 fields are below:
+
 ```{r load_data}
 base <- "https://raw.githubusercontent.com/geedoubledee/data698_research_project/main/data/allrecipes_df_pt_"
 exts <- c("1.csv", "2.csv", "3.csv", "4.csv", "5.csv")
@@ -129,12 +131,24 @@ for (i in 1:length(exts)){
 }
 url <- "https://raw.githubusercontent.com/geedoubledee/data698_research_project/main/data/links_df.csv"
 links_df <- read.csv(url)
+variable_descriptions1 <- read.table("variable_descriptions_p1.txt",
+                                    sep = "\t", header=TRUE)
+kable(variable_descriptions1, format = "simple")
 
 ```
 
-The reviews we gathered included each recipe's "Most Helpful Positive Review," which is the first review that Allrecipes.com shows users and is determined by user input, as well as each recipe's nine most recent reviews. Some recipes didn't have any positive reviews marked helpful by other users, so their "Most Helpful Positive Review" field was blank, and some recipes had been reviewed less than nine times. So there was more review data available for some recipes than others.
+The "Most Helpful Positive Review (MHPR)" mentioned in the last six of these fields and their descriptions is the first review that Allrecipes.com shows users. It is determined by user input, specifically the number of other users who have marked the review "helpful." Some recipes didn't have any positive reviews marked helpful by other users, so their MHPR fields contained empty strings or `NA` values. 
 
-### Initial Data Preparation for Unsupervised Learning
+The remaining field names and their descriptions are below.
+
+```{r }
+variable_descriptions2 <- read.table("variable_descriptions_p2.txt",
+                                    sep = "\t", header=TRUE)
+kable(variable_descriptions2, format = "simple")
+
+```
+
+Because these fields represent the nine most recent reviews for a recipe, the same six field names were used for each review, then numbered zero through eight to represent the review number. For instance, the field "User_[0-8]" in the table below actually refers to nine iterations of the "User" field, one for each of the nine most recent reviews for a recipe. Some recipes had been reviewed less than nine times, so any review fields beyond the number of times they had actually been reviewed contained empty strings and `NA` values. So there was more review data available for some recipes than others.
 
 During the data collection process, bad URLs were given a `Visited` value of -1 to separate them from good links we had already visited (value: 1) and links we had not yet visited (value: 0). Some of these bad links were added to the records erroneously, so we identified and removed them. 
 
@@ -155,7 +169,26 @@ ar_df <- ar_df |>
 
 ```
 
-We created a corpus of potentially negative reviews by pivoting our wide review data into a longer format, dropping many columns we didn't need for our analysis, and removing any reviews with star ratings of 4 or higher from the 134,800 total reviews we gathered. We hoped this would make manually labeling reviews by what problem they were identifying faster by limiting the number of reviews we would have to look at that didn't identify any problems at all. That left us with 14,954 potentially negative reviews.
+That left us with data for 18,347 recipes that had been reviewed at least once. We summarize the mean number of ratings, the mean star rating, and the mean number of reviews for recipes in our dataset below:
+
+```{r }
+ar_summ <- ar_df |>
+    summarize(mean_ratings_tot = round(mean(Ratings_Total), 1),
+              mean_ratings_avg = round(mean(Ratings_Avg), 1),
+              mean_reviews_tot = round(mean(Reviews_Total), 1))
+colnames(ar_summ) <- c("Ratings Total", "Ratings Average", "Reviews Total")
+rownames(ar_summ) <- c("MEAN")
+ar_summ <- as.data.frame(t(ar_summ)) |>
+    rownames_to_column(var = "VARIABLE")
+kable(ar_summ, format = "simple")
+
+```
+
+The recipes in our dataset were generally rated very highly, with a mean star rating of 4.5. They generally received large numbers of ratings (mean: 114.9) and reviews (mean: 90) as well. 
+
+### Initial Data Preparation for Unsupervised Learning
+
+To prepare our data for unsupervised learning, we created a corpus of potentially negative reviews by pivoting our wide review data into a longer format, dropping many columns we didn't need for our analysis, and removing any reviews with star ratings of 4 or higher from the 134,800 total reviews we gathered. We hoped this would make manually labeling reviews by what problem they were identifying faster by limiting the number of reviews we would have to look at that didn't identify any problems at all. That left us with 14,954 potentially negative reviews.
 
 ```{r pivot_long_remove_4_stars_plus}
 keep <- c("URL", "Recipe_Name", "Ratings_Total", "Ratings_Avg", "Reviews_Total")
@@ -381,7 +414,7 @@ Descriptions of the problems and the criteria we used to define whether a review
 
 ```{r prob_desc2}
 prob <- c("DIRECTIONS", "MEASUREMENTS", "TIMING", "TEMPERATURE", "ING_KEY_MISSING", "ING_FLAVOR_MISSING", "ING_WRONG_INCL", "INAUTHENTIC", "USER_ERROR")
-desc <- c("One or more steps was unclear, incorrect, or missing",
+desc3 <- c("One or more steps was unclear, incorrect, or missing",
           "Included too much or too little of one or more ingredients",
           "Needed more/less time to prep or to finish cooking",
           "Needed higher/lower temperature to cook or assemble correctly",
@@ -390,9 +423,9 @@ desc <- c("One or more steps was unclear, incorrect, or missing",
           "Included an incorrect ingredient",
           "Lacked a resemblance to the dish's traditional preparation/flavor",
           "Reviewer suspected/admitted they made a mistake")
-tbl <- cbind(prob, desc)
-colnames(tbl) <- c("PROBLEM", "DESCRIPTION")
-kable(tbl, format = "simple")
+tbl_print <- cbind(prob, desc3)
+colnames(tbl_print) <- c("PROBLEM", "DESCRIPTION")
+kable(tbl_print, format = "simple")
 
 ```
 
@@ -421,8 +454,8 @@ sent_star_summ_df <- ar_df_long_neg_labs |>
                  names_to = "Category", values_to = "Value") |>
     mutate(Perc = paste0(round(Value / Total * 100, 1), "%"))
 greys <- brewer.pal(9, "Greys")
-col <- c(pal[8], greys[6])
-fil <- c(pal[7], greys[4])
+col <- c(pal[10], greys[6])
+fil <- c(pal[9], greys[4])
 title_str <- "Frequency of Reviews Expressing Negative Sentiment by Star Rating"
 p3 <- sent_star_summ_df |>
     ggplot(aes(x = Category, y = Value,
@@ -505,15 +538,16 @@ The `INGREDIENTS` response variable took the place of the `ING_KEY_MISSING`, `IN
 ```{r prob_desc3}
 prob <- c("DIRECTIONS", "MEASUREMENTS", "TIMING", "TEMPERATURE",
           "INGREDIENTS", "INAUTHENTIC", "USER_ERROR")
-desc <- c("One or more steps was unclear, incorrect, or missing",
+desc4 <- c("One or more steps was unclear, incorrect, or missing",
           "Included too much or too little of one or more ingredients",
           "Needed more/less time to prep or to finish cooking",
           "Needed higher/lower temperature to cook or assemble correctly",
           "Missing a key/flavor ingredient or included an incorrect ingredient",
           "Lacked a resemblance to the dish's traditional preparation/flavor",
           "Reviewer suspected/admitted they made a mistake")
-tbl <- cbind(prob, desc)
-colnames(tbl) <- c("PROBLEM", "DESCRIPTION")
+tbl_print <- cbind(prob, desc4)
+colnames(tbl_print) <- c("PROBLEM", "DESCRIPTION")
+kable(tbl_print, format = "simple")
 
 ```
 
