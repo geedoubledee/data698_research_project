@@ -78,15 +78,15 @@ The question we intended to answer with our analysis was:
 
 **Can AllRecipes.com review text be classified according to the problems reviewers are claiming recipes suffer from?**
 
-To answer this question, we utilized a combination of unsupervised and supervised learning techniques. Of the 134,800 total reviews we gathered, we grouped the 14,954 reviews with a star rating of three or below into six topics using LDA, and we labeled 3,398 of these reviews according to sentiment expressed and problems asserted. We generated four featuresets for these reviews: one containing only unigrams, only containing only bigrams, one containing only trigrams, and a combined featureset containing all three. Four kinds of models were trained on each featureset, and we needed seven versions of each kind of model per featureset (one for each non-exclusive problem class).
+To answer this question, we utilized a combination of unsupervised and supervised learning techniques. Of the 134,800 total reviews we gathered, we grouped the 14,954 reviews with a star rating of three or below into six topics using LDA, and we labeled 3,398 of these reviews according to sentiment expressed and problems asserted. We generated four featuresets for these reviews: one containing only unigrams, only containing only bigrams, one containing only trigrams, and a combined featureset containing all three. Four kinds of supervised learning models were trained on each featureset, and we needed seven versions of each kind of model per featureset (one for each non-exclusive problem class).
 
 ## Literature Review
 
-The classification of text, including review text and even more specifically recipe review text, has been previously analyzed from many perspectives. Our literature review focused on: 1) **unsupervised learning** techniques that might reduce the amount of time spent manually labeling the review text for supervised learning, as well as the pros and cons of some forms of text pre-processing prior to unsupervised learning; 2) comparisons of several **supervised learning** techniques commonly used in Natural Language Processing (NLP), as well as their applications when classes are greater than two and non-exclusive; 3) developing featuresets from **ngrams of different lengths**; and 4) **performance metrics** for assessing text classifiers when the labeled classes are imbalanced
+The classification of text, including review text and even more specifically recipe review text, has been previously analyzed from many perspectives. Our literature review focused on: 1) **unsupervised learning** techniques that might reduce the amount of time spent manually labeling the review text for supervised learning, as well as the pros and cons of some forms of text pre-processing prior to unsupervised learning; 2) comparisons of several **supervised learning** techniques commonly used in Natural Language Processing (NLP), as well as their applications in multi-class and non-exclusive classification; 3) developing featuresets from **ngrams of different lengths**; and 4) **performance metrics** for assessing text classifiers when the labeled classes are imbalanced.
 
 **Unsupervised Learning: ** When reviewing unsupervised learning techniques that can be applied to NLP, we decided early on that we would not consider fuzzy clustering via artificial neural networks like the ones described in @derhgawen2020efficient due to computation costs. We also rejected semantic orientation as described in @chaovalit2005movie, as it can only be used in binary classification tasks like simple sentiment analysis.
 
-Instead, we looked at other methods. Both @sutherland2020topic and @schofield2016comparing have used topic modeling via LDA, a common unsupervised learning technique in NLP, to effectively classify text into coherent groups automatically. Using LDA, @sutherland2020topic were able to identify, then validate 14 distinct topics (value, amenities, etc.) of customer satisfaction in reviews guests left for various accommodations (hotels, etc.). So it seemed promising that we might be able to achieve similar success employing LDA in our analysis to automatically categorize reviews prior to manually labeling them. However, these articles took different approaches to stemming, a popular text pre-processing method used to simplify the vocabulary of a text corpus by essentially combining words with the same beginnings but different endings into one root word. @sutherland2020topic found stemming to be a key part of their topic modeling success, while @schofield2016comparing found that this method did not improve their topic modeling, no matter what number of coherent groups they tried to identify in their corpora or how little stemming they did. All stemming methods, even light ones, reduced performance. So the question, "To stem, or not to stem?" remained for us.
+Instead, we looked at other methods. Both @sutherland2020topic and @schofield2016comparing have used topic modeling via LDA, a common unsupervised learning technique in NLP, to effectively classify text into coherent groups automatically. Using LDA, @sutherland2020topic were able to identify, then validate 14 distinct topics (value, amenities, etc.) of customer satisfaction in reviews guests left for various accommodations (hotels, etc.). So it seemed promising that we might be able to achieve similar success employing LDA in our analysis to automatically categorize reviews prior to manually labeling them. However, @sutherland2020topic and @schofield2016comparing took different approaches to stemming, a popular text pre-processing method used to simplify the vocabulary of a text corpus by essentially combining words with the same beginnings but different endings into one root word. @sutherland2020topic found stemming to be a key part of their topic modeling success, while @schofield2016comparing found that this method did not improve their topic modeling, no matter what number of coherent groups they tried to identify in their corpora or how little stemming they did. All stemming methods, even light ones, reduced performance. So the question, "To stem, or not to stem?" remained for us.
 
 **Supervised Learning: ** Having settled on LDA as our unsupervised learning technique, whether it made manually labeling our reviews any faster or not, we considered a wide variety of supervised learning techniques commonly used in NLP. We settled on: 1) Naive Bayes models, used by @lohar2017adapt, @pranckevivcius2017comparison, @zhang2003question, and @madushani2021fine; 2) SVM models, used by @al2018random, @pranckevivcius2017comparison, and @zhang2003question; 3) Logistic Regression models, used by @pranckevivcius2017comparison; and 4) eXtreme Gradient Boosting models. Both @al2018random and @pranckevivcius2017comparison used Random Forest models, but we knew from previous experience those models would not be able to handle the sparse matrices we would need to use to represent our ngram featuresets. So we chose eXtreme Gradient Boosting models, which can handle sparse matrices, instead.
 
@@ -98,7 +98,7 @@ Like @pranckevivcius2017comparison, @zhang2003question compared the results of m
 
 **Ngrams of Different Lengths: ** In addition to wanting to test a variety of models, we also wanted to test a variety of featuresets based on ngrams of different lengths. Using only Naive Bayes models, @madushani2021fine found that the models always performed better as the length of the ngrams used to train them increased. That is, bigrams alone produced better models than unigrams alone, and trigrams alone produced better models than bigrams alone. However, when comparing performance across a variety of models, @pranckevivcius2017comparison found that unigrams alone were sufficient. Bigrams alone didn't perform better than unigrams alone, and neither did trigrams alone. All three combined did not improve performance either. 
 
-**Performance Metrics: ** @jurafsky2024speech stresses the importance of precision, recall, and F scores in measuring text classifier performance when the classes are imbalanced like the recipe problems we wanted to identify in the review text. @lohar2017adapt found unsurprisingly that when predicting multiple non-exclusive classes, it is the classes that are the best represented in the data that are easiest for models to predict. While they only examined Naive Bayes models in their analysis, we found the same to be true regardless of the type of model used in our analysis. 
+**Performance Metrics: ** @jurafsky2024speech stress the importance of precision, recall, and F scores in measuring text classifier performance when the classes are imbalanced like the recipe problems we wanted to identify in the review text. @lohar2017adapt found unsurprisingly that when predicting multiple non-exclusive classes, it is the classes that are the best represented in the data that are easiest for models to predict. While they only examined Naive Bayes models in their analysis, we found the same to be true regardless of the type of model used in our analysis. 
 
 ## Methodology
 
@@ -108,13 +108,13 @@ First, we isolated the reviews most likely to assert problems, i.e. those with a
 
 Then we employed LDA to fuzzy cluster the reviews into an optimal number of topics based on their bigrams. We chose bigrams because they include more context than unigrams, and some words that are commonly considered stopwords for text data were useful for our analysis. Many reviews included text like "too much" or "not enough," both of which could indicate `MEASUREMENTS` errors, and we hoped LDA would group reviews together based on similar informative language like this so that the next step of our methodology, manual labeling, might be faster. The optimal number of topics turned out to be six.
 
-Reviews were manually labeled according to sentiment expressed and problems asserted. Once that was completed, we employed Naive Bayes, Support Vector Machine (SVM), eXtreme Gradient Boosting, and Logistic Regression models to predict problem classes using only unigrams, only bigrams, only trigrams, or a combination of all three. Models were then ranked by their F1 Scores on each of the seven problem classes. 
+Reviews were manually labeled according to sentiment expressed and problems asserted. Once that was completed, we employed Naive Bayes, SVM, eXtreme Gradient Boosting, and Logistic Regression models to predict problem classes using only unigrams, only bigrams, only trigrams, or a combination of all three. Models were then ranked by their F1 Scores on each of the seven problem classes. 
 
 Finally, we attempted to improve performance for all models by removing highly correlated ngram features from all featuresets. 
 
 ## Experimentation & Results
 
-The data we gathered included several fields. Names and descriptions of the first 15 fields are below:
+The recipe data we gathered included several fields. Names and descriptions of the first 15 fields are below:
 
 ```{r load_data}
 base <- "https://raw.githubusercontent.com/geedoubledee/data698_research_project/main/data/allrecipes_df_pt_"
@@ -148,7 +148,7 @@ kable(variable_descriptions2, format = "simple")
 
 ```
 
-Because these fields represent the nine most recent reviews for a recipe, the same six field names were used for each review, then numbered zero through eight to represent the review number. For instance, the field "User_[0-8]" in the table below actually refers to nine iterations of the "User" field, one for each of the nine most recent reviews for a recipe. Some recipes had been reviewed less than nine times, so any review fields beyond the number of times they had actually been reviewed contained empty strings and `NA` values. So there was more review data available for some recipes than others.
+Because these fields represent the nine most recent reviews for a recipe, the same six field names were used for each review, then numbered zero through eight to represent the review number. For instance, the field "User_[0-8]" in the table above actually refers to nine iterations of the "User" field, one for each of the nine most recent reviews for a recipe. Some recipes had been reviewed less than nine times, so any review fields beyond the number of times they had actually been reviewed contained empty strings and `NA` values. So there was more review data available for some recipes than others.
 
 During the data collection process, bad URLs were given a `Visited` value of -1 to separate them from good links we had already visited (value: 1) and links we had not yet visited (value: 0). Some of these bad links were added to the records erroneously, so we identified and removed them. 
 
@@ -298,7 +298,8 @@ p0 <- per_vals |>
     geom_line(color = pal[9]) +
     geom_point(color = pal[10]) +
     scale_x_continuous(breaks = seq(2, 12, 1), limits = c(2, 12)) +
-    scale_y_continuous(breaks = seq(0, 25000, 5000), limits = c(0, 25000))
+    scale_y_continuous(breaks = seq(0, 25000, 5000), limits = c(0, 25000)) +
+    labs(title = "LDA Model Perplexity vs. Number of Topics")
 p0
 
 ```
@@ -324,13 +325,14 @@ p1 <- top_terms |>
     ggplot(aes(beta, term)) +
     geom_col(color = pal[10], fill = pal[9]) +
     facet_wrap(~ topic, scales = "free_y", nrow = 2) +
-    scale_y_reordered()
+    scale_y_reordered() +
+    labs(title = "Bigrams Most Likely to Occur in Topics Identified by LDA")
 p1
 
 
 ```
 
-There was a lot of commonality in the bigrams that were frequent within these six topics. For instance, "next time" was the first or second most identifying bigram in four out of six topics, indicating the reviews in each of those topics were likely to exhibit some disappointment and make some suggestions for improvement. The bigrams "too much" and "way too" were the first and second most identifying topics for topic six, so it seemed likely from this plot that `MEASUREMENTS` errors might define this topic. However, we were also able to find these bigrams somewhere in the identifying bigrams list for every single other topic, so we did not expect `MEASUREMENTS` errors to be exclusive to topic six. 
+There was a lot of commonality in the bigrams that were most likely to occur within these six topics. For instance, "next time" was the first or second most identifying bigram in four out of six topics, indicating the reviews in each of those topics were likely to exhibit some disappointment and make some suggestions for improvement. The bigrams "too much" and "way too" were the first and second most identifying bigrams for topic six, so it seemed likely from this plot that `MEASUREMENTS` errors might define this topic. However, we were also able to find these bigrams somewhere in the identifying bigrams list for every single other topic, so we did not expect `MEASUREMENTS` errors to be exclusive to topic six. 
 
 Despite all the overlap, there were some bigrams that were unique to the top identifiers for each topic. It was notable that some of these unique bigrams were related to specific ingredients though, i.e. brown sugar being an identifier of topic one, cream cheese being an identifier of topics two and four, and soy sauce being an identifier of topic six. Ingredients therefore resulted in some unintended grouping. We suspected review length might have unintentionally factored into the grouping as well, so we plotted the distribution of review length by topic to confirm whether or not that was the case:
 
@@ -410,7 +412,7 @@ The observations were labeled in two ways:
 
 *Note that these nine problems were later reduced to the seven problems mentioned previously by combining the three ingredient-related problems (`ING_KEY_MISSING`, `ING_FLAVOR_MISSING`, and `ING_WRONG_INCL`) into a single problem (`INGREDIENTS`).
 
-Descriptions of the problems and the criteria we used to define whether a review identified them are outlined below:
+Descriptions of the problems and the criteria we used to determine whether a review identified them are outlined below:
 
 ```{r prob_desc2}
 prob <- c("DIRECTIONS", "MEASUREMENTS", "TIMING", "TEMPERATURE", "ING_KEY_MISSING", "ING_FLAVOR_MISSING", "ING_WRONG_INCL", "INAUTHENTIC", "USER_ERROR")
@@ -428,6 +430,10 @@ colnames(tbl_print) <- c("PROBLEM", "DESCRIPTION")
 kable(tbl_print, format = "simple")
 
 ```
+
+Labeling text manually is always subjective, and it requires a strong commitment to consistency. We tried to apply the same criteria to every review and to resort to the same logic when assigning labels, especially in borderline cases. For instance, we decided it was not enough for a reviewer to say that a recipe was "missing something" for us to label it as indicating as `ING_FLAVOR_MISSING`. The reviewer had to go one step further and state what they added or what they would add next time in order to better the flavor. However, there were surely times when we made a judgment call one way based on the text of one review, then a different way when we encountered similar text in another review. It is also true that another person might have made very different labeling decisions throughout the process. We stand by the quality of the labels we assigned nonetheless. 
+
+Recipe review text has some aspects that make labeling it a more complicated task than labeling other kinds of text. Many reviews were very long, but expressed little or nothing of use for our analysis. Reviewers were also frequently responding to one another when they left reviews, so reading those reviews felt like listening to one half of a phone call. It was more confusing than revealing. Many reviews required some reading between the lines, and in some cases the recipe itself had to be consulted to confirm our understanding of what was being said. Lastly, reviewers can be wrong. We did not allow the incorrectness of any statements in a review to disqualify the review from receiving problem indicator labels. However, some reviewers were occasionally so incorrect in their statements that we were offended on the recipe creator's behalf.
 
 Because we only looked at reviews with star ratings of three or below, we originally felt it should not be possible for these reviews to receive a "Positive" label for `SENTIMENT`. However, we did encounter review text along the way that was clearly neither "Negative" nor "Neutral," and it's possible the reviewer intended to leave a higher star rating along with their seemingly "Positive" words. For the sake of consistency, we continued to categorize these "Positive" reviews as "Neutral" during labeling so that we could redefine our `SENTIMENT` variable later and hopefully eliminate any confusion. To that end, we replaced the `SENTIMENT` variable with the `NEGATIVE` variable, a binary predictor in which a value of 1 indicates the review text expressed a "Negative" sentiment, and a value of 0 simply indicates it did not. 
 
@@ -553,11 +559,9 @@ kable(tbl_print, format = "simple")
 
 Then we refined the text pre-processing and tokenization that was done prior to LDA topic modeling. First, we did simple things like converting all text to lowercase and removing any punctuation marks except for apostrophes (after replacing right single quotation marks used as such). Then, we undertook more complex transformations.
 
-First, we replaced any ingredients a review mentioned (i.e. "chicken," "flour," or "pepper") with a single token: "__ING__." We hoped we would be better able to group similar language together this way because we wanted to know how frequently a review discussed ingredients and the contexts in which ingredients were being discussed, but it didn't really matter which ingredient a reviewer was talking about for our purposes. What mattered, as just one example, was whether the reviewer was saying there was "too much" or "not enough" of said ingredient. The ingredients list we used to reduce ingredient words to a single token was neither perfect nor exhaustive, but it did cover enough common ingredients to be useful.
+First, we replaced any ingredients a review mentioned (i.e. "chicken," "flour," or "pepper") with a single token: "\_\_ING\_\_." We hoped this custom usage of stemming would help us group similar language together because we wanted to know how frequently a review discussed ingredients and the contexts in which ingredients were being discussed, but it didn't really matter which ingredient a reviewer was talking about for our purposes. What mattered, as just one example, was whether the reviewer was saying there was "too much" or "not enough" of said ingredient. The ingredients list we used to reduce ingredient words to a single token was neither perfect nor exhaustive, but it did cover enough common ingredients to be useful.
 
-For similar reasons, we replaced any measurement words and their common abbreviations (i.e. "tablespoons" or "tbsp") with a single token: "__MEAS__."
-
-We also replaced any numbers (including integers, fractions, mixed fractions, and decimals) with a single token: "__NUM__."
+For similar reasons, we replaced any measurement words and their common abbreviations (i.e. "tablespoons" or "tbsp") with a single token: "\_\_MEAS\_\_." We also replaced any numbers (including integers, fractions, mixed fractions, and decimals) with a single token: "\_\_NUM\_\_."
 
 ```{r }
 my_url1 <- "https://raw.githubusercontent.com/geedoubledee/data698_research_project/main/data/recipe_ing_train.json"
@@ -619,7 +623,7 @@ ar_df_long_neg_ING <- ar_df_long_neg |>
 
 ```
 
-We tokenized the refined text into four featuresets: one containing only unigrams, one containing only bigrams, only containing only trigrams, and one containing a combination of all three. Each featureset was represented as a sparse matrix, which we split into train, validate, and test sets. 
+We then tokenized the refined text into four featuresets: one containing only unigrams, one containing only bigrams, only containing only trigrams, and one containing a combination of all three. Each featureset was represented as a sparse matrix, which we split into train, validate, and test sets. 
 
 ```{r }
 keep <- c("URL", "Review_Num", "Review_Txt")
@@ -709,8 +713,6 @@ ar_df_long_neg_tokens_sparse4 <- tidy(ar_df_long_neg_tokens_dtm4) |>
     cast_sparse(document, term, count)
 
 ```
-
-
 
 ```{r }
 set.seed(1006)
@@ -856,7 +858,7 @@ for (i in 1:length(dat)){
 
 ### Supervised Learning: Model Validation
 
-We made predictions using the data that was set aside for validation. Below are the top performing models by F1 Score for each problem. The featuresets the top performers used to achieve their results are also listed. 
+We made predictions using the data that was set aside for validation. Below are the top performing models by F1 Score for each problem. The featuresets the top performers used to achieve their results are also listed in the `Token` column.
 
 ```{r }
 nb_preds <- list()
@@ -1026,7 +1028,7 @@ kable(metrics, format = "simple")
 
 ```
 
-Performance on most problems was low for all models, no matter which featuresets they used, but moderate performance was achieved on two problems. The Support Vector Machine model using a combination of unigrams, bigrams, and trigrams performed well on the `MEASUREMENTS` problem, achieving an F1 Score of 68.02 percent, and the Naive Bayes model using the same combination of ngrams performed well on the `INGREDIENTS` problem, achieving an F1 Score of 69.27 percent.
+Performance on most problems was low for all models, no matter which featuresets they used, but moderate performance was achieved on two problems. The SVM model using a combination of unigrams, bigrams, and trigrams performed well on the `MEASUREMENTS` problem, achieving an F1 Score of 68.02 percent, and the Naive Bayes model using the same combination of ngrams performed well on the `INGREDIENTS` problem, achieving an F1 Score of 69.27 percent.
 
 ### Supervised Learning: Model Adjustment
 
@@ -1166,7 +1168,7 @@ for (i in 1:length(dat)){
 
 ```
 
-We made new predictions on the data set aside for validation using the reduced featuresets resulting from removing highly correlated ngrams of the same length. Below are the top performing models by F1 Score for each problem based on the new predictions. The featuresets the top performers used to achieve their results are also listed. 
+We made new predictions on the data set aside for validation using the reduced featuresets resulting from removing highly correlated ngrams of the same length. Below are the top performing models by F1 Score for each problem based on the new predictions. The featuresets the top performers used to achieve their results are again listed in the `Token` column.
 
 ```{r new_validate_preds}
 nb_preds <- list()
@@ -1336,7 +1338,7 @@ kable(metrics, format = "simple")
 
 ```
 
-Performance was still low for most problems for all models, no matter which featuresets they used. The Support Vector Machine model using a combination of unigrams, bigrams, and trigrams still performed well on the `MEASUREMENTS` problem, but its F1 Score decreased slightly to 67.45 percent, and the Naive Bayes model using the same combination of ngrams still performed well on the `INGREDIENTS` problem, but its F1 Score decreased slightly as well (to 69.07 percent).
+Performance was still low for most problems for all models, no matter which featuresets they used. The SVM model using a combination of unigrams, bigrams, and trigrams still performed well on the `MEASUREMENTS` problem, but its F1 Score decreased slightly to 67.45 percent, and the Naive Bayes model using the same combination of ngrams still performed well on the `INGREDIENTS` problem, but its F1 Score decreased slightly as well (to 69.07 percent).
 
 ### Supervised Learning: Model Evaluation
 
@@ -1510,11 +1512,19 @@ kable(metrics, format = "simple")
 
 ```
 
-Performance increased for the Support Vector Machine model using all ngrams on the `MEASUREMENTS` problems. It achieved a final F1 Score of 71.74 percent. However, performance for the Naive Bayes model decreased, and it used only unigrams instead of all ngrams to achieve a final F1 Score of 64.11 percent. 
+Performance increased for the SVM model using all ngrams on the `MEASUREMENTS` problems. It achieved a final F1 Score of 71.74 percent. However, performance for the Naive Bayes model decreased, and it used only unigrams instead of all ngrams to achieve a final F1 Score of 64.11 percent. 
 
 ## Conclusions & Future Work
 
+We were impressed by the final performance of the SVM model using all ngrams on the `MEASUREMENTS` problem, given that we only labeled 22.7 percent of the 14,954 potentially negative reviews we isolated for our analysis. Had we had time to label more data, we believe the performance of the eXtreme Gradient Boosting models would have improved, as we have seen them outperform both Naive Bayes and SVM models on text classification tasks in the past. 
 
+Testing featuresets built from ngrams of different lengths was fruitful, but the featurespace dramatically increased when combining unigrams, bigrams, and trigrams. If we were to combine these into a single featureset again in the future, we would want to trim the vocabulary of the corpus further first. 
+
+We were disappointed that we couldn't build good classifiers for all the problem classes, so the answer to the question we asked prior to our analysis, **Can AllRecipes.com review text be classified according to the problems reviewers are claiming recipes suffer from?**, is "kind of." Only `MEASUREMENTS` and `INGREDIENTS` problems could be classified with moderate success. 
+
+Labeling more data would have enabled us to build better models for the less frequent problems. We saw F1 Scores greater than 50 percent for `TIMING`, so it's possible we were close to having enough observations to train a good classifier for that problem. `DIRECTIONS` problems were the hardest to classify. While labeling, we felt that reviewers expressed issues with a recipe's steps in much more varied and vague ways than they expressed other issues, so that makes sense. Rarely would someone say something as simple as "this recipe is missing a step." Instead, we were more likely to encounter phrases like "if you try to put this much batter in one cake pan, it's going to spill over; use two cake pans" instead. Considering that, it would actually probably have been worthwhile to separate the `DIRECTIONS` problems that were equipment-specific into a separate `EQUIPMENT` problem class. 
+
+There are many other ways in which this work could be improved upon and taken further. We would like to formalize and expand upon the custom stemming we did to reduce ingredients, measurements, and numbers to single tokens. We would also like to test how this recipe review-specific stemming might improve the LDA topic modeling we did, as we did not develop this stemming process until after LDA had already been performed. Since our supervised learning models performed best using either unigrams alone or a combination of unigrams, bigrams, and trigrams, and we used only bigrams during LDA, it is likely LDA would perform better using ngrams of different lengths as well. We intended for LDA to speed up our analysis, but we realize now that we would have actually needed to spend more time refining it than was available in order for us to have really gotten the most out of this tool.
 
 ## Bibliography
 
@@ -1522,7 +1532,7 @@ Performance increased for the Support Vector Machine model using all ngrams on t
 
 ## Video Presentation
 
-
+[Here is a link to the video presentation](https://www.loom.com/share/b00b2422a1d94602acd67d4fda8e6115?sid=4da62db7-9a4c-4eaf-a9c7-2894b27b3519).
 
 ## Appendix with Code
 
